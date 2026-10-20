@@ -1,119 +1,132 @@
 # Οικογενειακά έξοδα: budget tracker
 
-A small website for the family budget, first built on the Google Sheet **Μηνιαία Έξοδα**.
+A small website for the family budget. It started on the Google Sheet **Μηνιαία Έξοδα**;
+since October 2026 the data lives in **Supabase** (PostgreSQL, free plan).
 
-**Since October 2026 the data lives in Supabase (PostgreSQL, free plan).** Each person signs in
-with their own email (a sign-in link), and only the emails in the `allowed_emails` table get in.
-See [Supabase version](#supabase-version) below. The Google Sheet setup that follows still works:
-empty `js/config.js` and the site uses the sheet again.
+Live at **https://yianniskar4.github.io/budget/**
 
 - **Μήνας**: the month overview (limit, actual spending, fixed bills still due, plan vs paid per category).
-  It uses the same maths as the **Έλεγχος μήνα** tab.
+  It uses the same maths as the sheet's **Έλεγχος μήνα** tab.
 - **Πληρωμές**: every payment, with search and filters. Tap one to edit or delete it.
 - **Γραφήματα**: charts you can customise, add, reorder and delete. Your layout is saved on each device.
-- **Πλάνα**: change the monthly limit, the warning level and each category's plan. These changes can apply to one month or to that month and every month after it.
-- **+ Πληρωμή**: add a payment in a few taps. It goes straight into the **Καταγραφή** tab.
+- **Πλάνα**: the monthly limit, the warning level and each category's plan, for one month or that month
+  and every month after it. **Δημιουργία μήνα** starts a new month from the one before.
+- **+ Πληρωμή**: add a payment in a few taps.
 
-Everything is free: GitHub Pages hosts the site and Google runs the script on your own account.
+Everything is free: GitHub Pages hosts the site and Supabase hosts the database and sign-in.
 
 ## How it fits together
 
 ```
-Phone / laptop  ──►  GitHub Pages (this repo: HTML + JS)
-                         │  POST + secret key
+Phone / laptop  ──►  GitHub Pages (this repo: HTML + JS, no build step)
+                         │  sign-in token
                          ▼
-                 Google Apps Script web app (apps-script/Code.gs)
+                 Supabase (Frankfurt)
+                   ├─ Auth: email sign-in link, tokens
+                   └─ API (PostgREST): /rest/v1/rpc/<function>
                          │
                          ▼
-                 Google Sheet "Μηνιαία Έξοδα"
+                 Postgres: api_* functions ──► tables, guarded by Row Level Security
 ```
 
-None of your budget data is stored in this repo. The site only gets it from the
-script, and the script answers only requests that carry your secret key.
+- The site never reads or writes tables directly. It calls seven functions that live in the database:
+  `api_read`, `api_add`, `api_update`, `api_delete`, `api_set_month`, `api_add_month`, `api_set_plan`.
+  They are defined in [`supabase/schema.sql`](supabase/schema.sql); Supabase publishes each one
+  as `/rest/v1/rpc/<name>` automatically.
+- `api_read` returns the same JSON the old Google Apps Script returned, so the page code
+  (`js/calc.js`, `js/charts.js`, most of `js/app.js`) did not change.
+- [`js/supa.js`](js/supa.js) is a small client for Supabase's REST endpoints (sign-in link or code,
+  token refresh, rpc calls). No extra library is needed.
+- [`js/config.js`](js/config.js) holds the project URL and the publishable key. Both are public by design.
 
-## Setup (once, about 10 minutes)
+## Who can see the data
 
-### 1. Add the script to the sheet
+- People sign in with their own email: they get a link, tap it, and that device stays signed in.
+- Only emails in the `allowed_emails` table get any data. Anyone else who signs in sees
+  "δεν έχει πρόσβαση".
+- Row Level Security in the database limits every read and write to the signed-in person's household.
+  Nobody gets anything without signing in.
+- The **secret / service_role key** and the **database password** never go in the site or this repo.
 
-1. Open the Google Sheet and go to **Extensions → Apps Script**.
-2. Delete what is in `Code.gs` and paste in the contents of [`apps-script/Code.gs`](apps-script/Code.gs).
-3. Optional: go to **Project Settings** (the gear icon), tick **Show "appsscript.json"**, and paste in
-   [`apps-script/appsscript.json`](apps-script/appsscript.json).
-   This sets the script's time zone to Athens.
-4. Click **Save**. Choose `setup` in the function list at the top, then click **Run**.
-   Google asks for permission the first time. Choose your account, click **Advanced → Go to … (unsafe)**,
-   then **Allow**. This warning appears because the script is your own and Google hasn't reviewed it.
-5. Open **Execution log**. It shows your **secret key**. Copy it.
-   `setup` also adds an **ID** column (G) to the **Καταγραφή** tab. The site needs it to edit
-   and delete the right row, so please don't remove it.
+## Everyday tasks (Supabase dashboard → SQL Editor)
 
-### 2. Publish the script as a web app
+Add someone (remove with `delete from allowed_emails where email = '…';`):
 
-1. Click **Deploy → New deployment**. Next to "Select type", click the gear and choose **Web app**.
-2. Set **Execute as: Me** and **Who has access: Anyone**.
-3. Click **Deploy** and copy the **Web app URL**. It ends in `/exec`.
+```sql
+insert into allowed_emails (email, household_id)
+values ('someone@gmail.com', '00000000-0000-4000-8000-000000000001');
+```
 
-"Anyone" only means the URL can be called. Without the secret key the script returns nothing.
+Add a category with a plan for every month (`'fixed'` = Πάγιο, `'extra'` = Επιπλέον):
 
-> When you change `Code.gs` later, use **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy**.
-> The URL stays the same.
+```sql
+insert into categories (household_id, name, default_type, sort_order)
+values ('00000000-0000-4000-8000-000000000001', 'Γυμναστήριο', 'extra', 20);
 
-### 3. Turn on the website
+insert into category_plans (household_id, month, category_id, type, planned)
+select m.household_id, m.month, c.id, 'extra', 30
+from month_limits m join categories c on c.household_id = m.household_id and c.name = 'Γυμναστήριο';
+```
 
-1. In this GitHub repo, go to **Settings → Pages**.
-2. Under **Build and deployment**, choose **Deploy from a branch**, branch **main**, folder **/ (root)**, then **Save**.
-3. After a minute the site is live at **https://yianniskar4.github.io/budget/**.
+Backup: the free plan has no downloadable backups. In **Table Editor**, open `payments`,
+`month_limits` and `category_plans` and use **Export → CSV**.
 
-(GitHub Pages is free for public repositories. The code is public, but your data is not.)
+Good to know:
 
-### 4. Connect each phone or laptop
-
-Open the site, paste the **Web app URL** and the **secret key**, and tap **Σύνδεση**.
-They are saved on that device only. On a phone, use **Add to Home Screen** so it opens like an app.
-
-## Good to know
-
-- You can still type into the sheet directly. The site picks up those rows on the next refresh,
-  and the script gives them an ID automatically.
-- Deleting a payment clears its row instead of removing it, so the sheet's formula ranges
-  (rows 5 to 2001) stay exactly as they are.
-- New categories: add them to the list in **Έλεγχος μήνα** (A16:A32) and to the plan rows in
-  **Ιστορικό και πλάνα**, as you do today. The site reads the category list from the sheet.
+- A free Supabase project pauses after 7 days with no use at all. Restore it from the dashboard; nothing is lost.
+- The built-in email sender allows only a few emails an hour. Each device signs in once, so this is enough.
+  To also show a sign-in code in the email (handy for an iPhone home-screen app), set up custom SMTP
+  (for example Gmail with an app password) and add `{{ .Token }}` to the Magic Link template.
 - One difference from the sheet: when a category's plan is exactly paid, the site shows
-  **Πληρώθηκε** instead of **Κοντά στο όριο**. Everything else matches the sheet's formulas.
-- A lost phone? Run `resetKey` in Apps Script to make a new key. The old one stops working,
-  and you enter the new key on your other devices.
+  **Πληρώθηκε** instead of **Κοντά στο όριο**.
+
+## Changing the database
+
+`supabase/schema.sql` is the source of truth. After changing it, paste the whole file into the
+SQL Editor and run it. It is safe to re-run: it creates what is missing and replaces the functions,
+and it never deletes data.
+
+## Setting up from scratch
+
+1. Create a Supabase project (Free, Frankfurt). Turn **off** "Automatically expose new tables";
+   the schema grants rights itself.
+2. SQL Editor: run [`supabase/schema.sql`](supabase/schema.sql).
+3. Import the data: `python3 supabase/import_from_xlsx.py export.xlsx you@gmail.com partner@gmail.com > data.sql`
+   (needs `pip install openpyxl`), then run `data.sql` in the SQL Editor.
+   It holds your budget data, so never commit it.
+4. Authentication → URL Configuration: Site URL `https://yianniskar4.github.io/budget/`,
+   Redirect URLs `https://yianniskar4.github.io/budget/**`.
+5. Put the project URL and publishable key in `js/config.js`.
+6. GitHub: **Settings → Pages**, deploy from branch **main**, folder **/ (root)**.
 
 ## Developing locally
 
-`dev/mock-server.mjs` runs `Code.gs` against an in-memory copy of the sheet, so you can try the site without Google:
-
-```
-node dev/mock-server.mjs path/to/grid.json 8080
-# open http://localhost:8080, script URL http://localhost:8080/exec, key "test"
-```
-
-`grid.json` holds the cell values of the three tabs (`{"<tab name>": [[...row...], ...]}`, dates as `{"$date": "yyyy-MM-dd"}`).
-Keep real exports out of the repo.
-
-### Supabase version
-
-`js/config.js` chooses the database. With a Supabase project in it, people sign in with their email
-(a code or a magic link) and the site calls the `api_*` functions in [`supabase/schema.sql`](supabase/schema.sql).
-With it empty, the site uses the Google Apps Script as described above.
-
 ```
 npm install
-npm run test:db                 # schema, row level security and api_* on a local PostgreSQL (PGlite)
+npm run test:db                 # schema, security and api_* on a local PostgreSQL (PGlite)
 node dev/supabase-mock.mjs      # site on http://localhost:8090 with a fake Supabase on :8091
-                                # sign in as a@example.com; the code is at http://localhost:8091/__mail?email=a@example.com
 ```
 
-`supabase/import_from_xlsx.py` turns an .xlsx export of the sheet into SQL for the first import.
-Its output holds your budget data, so never commit it.
+Sign in as `a@example.com`. No email is sent: the code and link are at
+`http://localhost:8091/__mail?email=a@example.com`. Pass a `data.sql` to the mock to try it with real data.
 
 ### Releasing a change
 
 GitHub Pages lets browsers cache files for about 10 minutes. After changing any `.js` or `.css` file,
-raise the `?v=` number everywhere it appears (`index.html`, the imports at the top of `js/app.js` and `js/charts.js`),
+raise the `?v=` number everywhere it appears (`index.html` and the imports at the top of the files in `js/`),
 so every phone loads the new files together instead of mixing old and new.
+`dev/make-preview.sh` builds a test copy into `next/` (served at `/budget/next/`) that keeps its
+browser data separate from the real site.
+
+## The original Google Sheet version
+
+The first version used the sheet as the database through a Google Apps Script
+([`apps-script/Code.gs`](apps-script/Code.gs)), with a secret key on each device.
+It still works: empty the two values in `js/config.js` and the site goes back to the sheet.
+
+1. In the sheet: **Extensions → Apps Script**, paste `Code.gs`, run `setup` and copy the key from the log.
+2. **Deploy → New deployment → Web app**, Execute as **Me**, access **Anyone**, copy the `/exec` URL.
+3. On each device, enter the URL and key (or scan the QR code from Settings on a device that is already connected).
+
+`dev/mock-server.mjs` runs `Code.gs` locally against a `grid.json` copy of the sheet:
+`node dev/mock-server.mjs grid.json 8080`, script URL `http://localhost:8080/exec`, key `test`.

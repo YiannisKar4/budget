@@ -1,5 +1,7 @@
-// Talks to the Google Apps Script web app attached to the sheet.
-// Requests are sent as text/plain so the browser does not need a CORS preflight.
+// Talks to the database: Supabase when js/config.js has a project, otherwise the
+// Google Apps Script web app attached to the sheet. Both answer with the same JSON.
+// Apps Script requests are sent as text/plain so the browser does not need a CORS preflight.
+import * as supa from './supa.js?v=7';
 
 const SETTINGS_KEY = 'budget.settings';
 
@@ -19,9 +21,39 @@ export function saveSettings(s) {
   }
 }
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(message, code = '') {
+    super(message);
+    this.code = code;
+  }
+}
+
+export const usesSupabase = supa.enabled;
+
+// Each site action and the database function that does it.
+const RPC = {
+  read: ['api_read', () => ({})],
+  add: ['api_add', (p) => ({ entry: p.entry })],
+  update: ['api_update', (p) => ({ id: p.id, entry: p.entry })],
+  delete: ['api_delete', (p) => ({ id: p.id })],
+  setMonth: ['api_set_month', (p) => ({ month: p.month, cap: p.cap, warn: p.warn, forward: !!p.forward })],
+  addMonth: ['api_add_month', (p) => ({ month: p.month })],
+  setPlan: ['api_set_plan', (p) => ({ month: p.month, category: p.category, type: p.type, plan: p.plan ?? null, forward: !!p.forward })],
+};
+
+async function callSupabase(action, payload) {
+  const [fn, args] = RPC[action];
+  try {
+    return await supa.rpc(fn, args(payload));
+  } catch (e) {
+    if (e.message === 'login-required') throw new ApiError('Η σύνδεση έληξε. Συνδέσου ξανά με το email σου.', 'login-required');
+    if (e.message === 'no-access') throw new ApiError(`Το email ${supa.userEmail()} δεν έχει πρόσβαση σε αυτά τα δεδομένα.`, 'no-access');
+    throw new ApiError(e.message);
+  }
+}
 
 export async function call(settings, action, payload = {}) {
+  if (supa.enabled()) return callSupabase(action, payload);
   if (!settings.url || !settings.key) throw new ApiError('not-configured');
   let res;
   try {

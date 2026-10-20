@@ -163,6 +163,19 @@ after = await rpc(email, 'api_read');
 assert.ok(after.plans.filter((p) => p.category === cat && p.month >= m0).every((p) => p.plan === null && p.type === 'Επιπλέον'));
 ok('api_set_plan with forward, and an empty (unknown) plan');
 
+// New month copies the closest earlier month
+const before = await rpc(email, 'api_read');
+const res = await rpc(email, 'api_add_month', ['2030-06']);
+after = await rpc(email, 'api_read');
+assert.equal(res.from, mLast);
+assert.deepEqual(after.months.find((m) => m.month === '2030-06'), { ...before.months.find((m) => m.month === mLast), month: '2030-06' });
+const plansOf = (d, mm) => d.plans.filter((p) => p.month === mm).map(({ category, type, plan }) => ({ category, type, plan }));
+assert.deepEqual(plansOf(after, '2030-06'), plansOf(before, mLast));
+await rejects(rpc(email, 'api_add_month', ['2030-06']), /υπάρχει ήδη/, 'duplicate month');
+await rejects(rpc('other@example.com', 'api_read').then(() => as('other@example.com', `select count(*)::int n from month_limits where month = '2030-06-01'`))
+  .then((r) => { if (r.rows[0].n) throw new Error('leak'); throw new Error('fine'); }), /fine/, 'other household');
+ok('api_add_month copies the limit and plans of the previous month');
+
 // Summary view matches the website maths
 const v = await as(email, `select category, paid::float8 as paid from month_category_summary where month = $1 order by category`, [`${m0}-01`]);
 assert.ok(v.rows.length > 0);

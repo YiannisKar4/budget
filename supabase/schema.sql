@@ -248,6 +248,27 @@ begin
   return json_build_object('ok', true, 'changed', n);
 end $$;
 
+-- Starts a new month with the limit and plans of the closest earlier month
+-- (or the earliest month, when it is before all of them).
+create or replace function api_add_month(month text) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); m date := _month(month); src date;
+begin
+  if exists (select 1 from month_limits ml where ml.household_id = h and ml.month = m) then
+    raise exception 'Ο μήνας υπάρχει ήδη.';
+  end if;
+  select coalesce(max(ml.month) filter (where ml.month < m), min(ml.month)) into src
+  from month_limits ml where ml.household_id = h;
+  insert into month_limits (household_id, month, cap, warn_ratio)
+  select h, m, coalesce(ml.cap, 0), coalesce(ml.warn_ratio, 0.8)
+  from (select 1) one left join month_limits ml on ml.household_id = h and ml.month = src;
+  insert into category_plans (household_id, month, category_id, type, planned)
+  select h, m, c.id, coalesce(cp.type, c.default_type), cp.planned
+  from categories c left join category_plans cp on cp.household_id = h and cp.month = src and cp.category_id = c.id
+  where c.household_id = h and not c.archived;
+  return json_build_object('ok', true, 'month', to_char(m, 'YYYY-MM'), 'from', to_char(src, 'YYYY-MM'));
+end $$;
+
 -- Plan for one category in a month (plan null = unknown); forward = also later months already set up.
 create or replace function api_set_plan(month text, category text, type text, plan numeric, forward boolean default false)
 returns json language plpgsql set search_path = public as $$
@@ -286,6 +307,6 @@ grant select on month_category_summary to authenticated;
 revoke all on month_category_summary from anon;
 
 revoke all on function api_read(), api_add(jsonb), api_update(uuid, jsonb), api_delete(uuid),
-  api_set_month(text, numeric, numeric, boolean), api_set_plan(text, text, text, numeric, boolean) from anon, public;
+  api_set_month(text, numeric, numeric, boolean), api_add_month(text), api_set_plan(text, text, text, numeric, boolean) from anon, public;
 grant execute on function api_read(), api_add(jsonb), api_update(uuid, jsonb), api_delete(uuid),
-  api_set_month(text, numeric, numeric, boolean), api_set_plan(text, text, text, numeric, boolean) to authenticated;
+  api_set_month(text, numeric, numeric, boolean), api_add_month(text), api_set_plan(text, text, text, numeric, boolean) to authenticated;

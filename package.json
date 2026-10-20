@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:db": "node dev/db-test.mjs"
+    "test:db": "node dev/db-test.mjs",
+    "dev:supabase": "node dev/supabase-mock.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.2.17"

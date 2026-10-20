@@ -1,6 +1,7 @@
-import { call, loadSettings, saveSettings, ApiError } from './api.js?v=6';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=6';
-import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=6';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=7';
+import * as supa from './supa.js?v=7';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=7';
+import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=7';
 
 /* ------------------------------------------------------------------ state */
 
@@ -114,6 +115,7 @@ async function fetchData({ quiet = false } = {}) {
     if (!state.month) state.month = defaultMonth(state.data);
     renderAll();
   } catch (err) {
+    if (handleAuthError(err)) return;
     if (!quiet || !state.data) toast(err.message, true);
     if (!state.data) renderAll();
   } finally {
@@ -124,7 +126,25 @@ async function fetchData({ quiet = false } = {}) {
 }
 
 function configured() {
+  if (usesSupabase()) return supa.signedIn();
   return !!(state.settings.url && state.settings.key);
+}
+
+/** Signed out or not allowed in: forget this device's data and show the sign-in screen. */
+function handleAuthError(err) {
+  if (!(err instanceof ApiError) || !['login-required', 'no-access'].includes(err.code)) return false;
+  if (err.code === 'no-access') supa.signOut();
+  forgetData();
+  document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+  renderAll();
+  toast(err.message, true);
+  return true;
+}
+
+function forgetData() {
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+  state.data = null;
+  state.month = null;
 }
 
 /* ------------------------------------------------------------------ render */
@@ -137,7 +157,7 @@ function renderAll() {
   $('#refresh').hidden = !configured();
   if (!configured()) return renderSetup();
   if (!state.data) {
-    $('#main').innerHTML = `<div class="empty">${state.loading ? 'Φόρτωση από το Google Sheet…' : 'Δεν ήταν δυνατή η φόρτωση. Πάτα ανανέωση ή έλεγξε τις Ρυθμίσεις.'}</div>`;
+    $('#main').innerHTML = `<div class="empty">${state.loading ? (usesSupabase() ? 'Φόρτωση…' : 'Φόρτωση από το Google Sheet…') : 'Δεν ήταν δυνατή η φόρτωση. Πάτα ανανέωση ή έλεγξε τις Ρυθμίσεις.'}</div>`;
     return;
   }
   renderMonthPicker();
@@ -171,6 +191,9 @@ function setMonth(m) {
 /* -------- setup -------- */
 
 function settingsFieldsHtml() {
+  if (usesSupabase()) {
+    return `<label class="lbl">Λογαριασμός</label><p id="s-account">Συνδεδεμένος ως <b>${esc(supa.userEmail())}</b></p>`;
+  }
   return `
     <label class="lbl" for="s-url">Διεύθυνση του Google script (τελειώνει σε /exec)</label>
     <input class="field" id="s-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(state.settings.url || '')}">
@@ -179,6 +202,7 @@ function settingsFieldsHtml() {
 }
 
 function renderSetup() {
+  if (usesSupabase()) return renderLogin();
   $('#main').innerHTML = `
     <div class="setup card">
       <h1>Σύνδεση με το Google Sheet</h1>
@@ -222,6 +246,82 @@ async function connect(url, key, errEl, btn) {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label || 'Σύνδεση'; }
   }
+}
+
+/* -------- sign in by email (Supabase) -------- */
+
+const LOGIN_EMAIL_KEY = 'budget.loginEmail';
+
+function renderLogin() {
+  let email = '';
+  try { email = localStorage.getItem(LOGIN_EMAIL_KEY) || ''; } catch { /* ignore */ }
+  $('#main').innerHTML = `
+    <div class="setup card">
+      <h1>Σύνδεση</h1>
+      <form id="login-form" novalidate>
+        <p class="muted">Γράψε το email σου. Θα σου έρθει ένας κωδικός και ένα link σύνδεσης.</p>
+        <label class="lbl" for="l-email">Email</label>
+        <input class="field" id="l-email" type="email" inputmode="email" autocomplete="email" value="${esc(email)}" required>
+        <div class="err" id="login-err" hidden></div>
+        <div class="row-actions"><button class="btn primary" type="submit" id="login-send">Στείλε μου κωδικό</button></div>
+      </form>
+      <form id="code-form" novalidate hidden>
+        <p class="muted">Στείλαμε email στο <b id="l-sent-to"></b>. Γράψε εδώ τον κωδικό του, ή πάτα το link μέσα στο email.</p>
+        <label class="lbl" for="l-code">Κωδικός</label>
+        <input class="field amount-input" id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" required>
+        <div class="err" id="code-err" hidden></div>
+        <div class="row-actions">
+          <button class="btn" type="button" id="login-back">Άλλο email</button>
+          <span class="spacer"></span>
+          <button class="btn primary" type="submit" id="code-send">Σύνδεση</button>
+        </div>
+      </form>
+      <p class="note">Μένεις συνδεδεμένος σε αυτή τη συσκευή μέχρι να πατήσεις Αποσύνδεση. Μπαίνουν μόνο τα email που έχουν πρόσβαση.</p>
+    </div>`;
+  const busy = (btn, on, label) => { btn.disabled = on; btn.textContent = label; };
+  const fail = (el, msg) => { el.textContent = msg; el.hidden = false; };
+  $('#login-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = $('#login-err');
+    err.hidden = true;
+    const value = $('#l-email').value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return fail(err, 'Γράψε ένα σωστό email.');
+    const btn = $('#login-send');
+    busy(btn, true, 'Αποστολή…');
+    try {
+      await supa.sendCode(value);
+      try { localStorage.setItem(LOGIN_EMAIL_KEY, value); } catch { /* ignore */ }
+      $('#l-sent-to').textContent = value;
+      $('#login-form').hidden = true;
+      $('#code-form').hidden = false;
+      $('#l-code').focus();
+    } catch (e) {
+      fail(err, e.message);
+    } finally {
+      busy(btn, false, 'Στείλε μου κωδικό');
+    }
+  });
+  $('#login-back').addEventListener('click', () => {
+    $('#code-form').hidden = true;
+    $('#login-form').hidden = false;
+  });
+  $('#code-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = $('#code-err');
+    err.hidden = true;
+    const code = $('#l-code').value.replace(/\s/g, '');
+    if (!/^\d{6,10}$/.test(code)) return fail(err, 'Ο κωδικός έχει μόνο αριθμούς (6 ψηφία ή περισσότερα).');
+    const btn = $('#code-send');
+    busy(btn, true, 'Έλεγχος…');
+    try {
+      await supa.verifyCode($('#l-sent-to').textContent, code);
+      renderAll();
+      await fetchData();
+    } catch (e) {
+      fail(err, e.message);
+      busy(btn, false, 'Σύνδεση');
+    }
+  });
 }
 
 /* -------- overview -------- */
@@ -422,6 +522,7 @@ async function saveEntry(ev) {
     toast(editing ? 'Η πληρωμή άλλαξε' : `Καταχωρίστηκε: ${euro(entry.amount)} · ${entry.category}`);
     fetchData({ quiet: true });
   } catch (e) {
+    if (handleAuthError(e)) return;
     err.textContent = e.message;
     err.hidden = false;
   } finally {
@@ -444,6 +545,7 @@ async function deleteEntry() {
     toast('Η πληρωμή διαγράφηκε');
     fetchData({ quiet: true });
   } catch (err) {
+    if (handleAuthError(err)) return;
     $('#entry-err').textContent = err.message;
     $('#entry-err').hidden = false;
   } finally {
@@ -590,7 +692,30 @@ function renderPlans() {
   const limits = d.months.find((x) => x.month === m);
   const s = monthSummary(d, m);
   if (!limits) {
-    $('#main').innerHTML = `<div class="card empty">Ο μήνας ${monthLong(m)} δεν υπάρχει στο «Ιστορικό και πλάνα». Πρόσθεσέ τον στο Google Sheet.</div>`;
+    if (!usesSupabase()) {
+      $('#main').innerHTML = `<div class="card empty">Ο μήνας ${monthLong(m)} δεν υπάρχει στο «Ιστορικό και πλάνα». Πρόσθεσέ τον στο Google Sheet.</div>`;
+      return;
+    }
+    $('#main').innerHTML = `
+      <div class="card empty">
+        <p>Ο μήνας ${monthLong(m)} δεν έχει ακόμα ταβάνι και πλάνα.</p>
+        <p class="small muted">Θα αντιγραφούν από τον προηγούμενο μήνα και μετά μπορείς να τα αλλάξεις.</p>
+        <div class="err" id="plans-err" hidden></div>
+        <button class="btn primary" type="button" id="add-month">Δημιουργία μήνα</button>
+      </div>`;
+    $('#add-month').addEventListener('click', async (ev) => {
+      ev.target.disabled = true;
+      try {
+        await call(state.settings, 'addMonth', { month: m });
+        toast(`Ο ${monthLong(m)} δημιουργήθηκε`);
+        await fetchData();
+      } catch (e) {
+        if (handleAuthError(e)) return;
+        $('#plans-err').textContent = e.message;
+        $('#plans-err').hidden = false;
+        ev.target.disabled = false;
+      }
+    });
     return;
   }
   $('#main').innerHTML = `
@@ -664,6 +789,7 @@ function renderPlans() {
       toast('Τα πλάνα αποθηκεύτηκαν');
       await fetchData();
     } catch (e) {
+      if (handleAuthError(e)) return;
       err.textContent = e.message;
       err.hidden = false;
       btn.disabled = false;
@@ -689,6 +815,8 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 const unb64url = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 
 function connectLink() {
+  // With Supabase each person signs in with their own email, so the link is just the site.
+  if (usesSupabase()) return `${location.origin}${location.pathname}`;
   const payload = b64url(JSON.stringify({ u: state.settings.url, k: state.settings.key }));
   return `${location.origin}${location.pathname}#connect=${payload}`;
 }
@@ -745,6 +873,10 @@ function openSettings() {
   $('#logout').hidden = !configured();
   $('#share-section').hidden = !configured();
   $('#share-box').hidden = true;
+  $('#share-note').textContent = usesSupabase()
+    ? 'Σκάναρε με την κάμερα του άλλου κινητού, ή στείλε το link. Ανοίγει τη σελίδα, και εκεί συνδέεσαι με το δικό σου email.'
+    : 'Σκάναρε με την κάμερα του άλλου κινητού, ή στείλε το link. Το link περιέχει το κλειδί, οπότε στείλ\' το μόνο σε δικά σας άτομα.';
+  $('#logout').textContent = usesSupabase() ? 'Αποσύνδεση' : 'Αποσύνδεση από αυτή τη συσκευή';
   applyTheme();
   $('#settings-dlg').showModal();
 }
@@ -760,14 +892,24 @@ function go_(view) {
 
 /* -------------------------------------------------------------------- init */
 
+function consumeSignInLink() {
+  if (!usesSupabase()) return;
+  try {
+    if (supa.consumeRedirect()) { forgetData(); toast('Συνδέθηκες'); }
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 function init() {
   applyTheme();
-  consumeConnectLink();
+  consumeSignInLink();
+  if (!usesSupabase()) consumeConnectLink();
   state.view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => go_(t.dataset.view)));
   window.addEventListener('hashchange', () => {
-    if (consumeConnectLink()) {
+    if (!usesSupabase() && consumeConnectLink()) {
       state.data = null;
       state.month = null;
       renderAll();
@@ -820,6 +962,7 @@ function init() {
 
   $('#settings-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    if (usesSupabase()) return $('#settings-dlg').close();
     const url = $('#s-url').value;
     const key = $('#s-key').value;
     if (url.trim() === (state.settings.url || '') && key.trim() === (state.settings.key || '')) {
@@ -842,9 +985,8 @@ function init() {
     const theme = state.settings.theme;
     state.settings = { theme };
     saveSettings(state.settings);
-    try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
-    state.data = null;
-    state.month = null;
+    if (usesSupabase()) supa.signOut();
+    forgetData();
     $('#settings-dlg').close();
     renderAll();
   });

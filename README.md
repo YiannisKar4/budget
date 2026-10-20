@@ -93,6 +93,22 @@ node dev/mock-server.mjs path/to/grid.json 8080
 `grid.json` holds the cell values of the three tabs (`{"<tab name>": [[...row...], ...]}`, dates as `{"$date": "yyyy-MM-dd"}`).
 Keep real exports out of the repo.
 
+### Supabase version
+
+`js/config.js` chooses the database. With a Supabase project in it, people sign in with their email
+(a code or a magic link) and the site calls the `api_*` functions in [`supabase/schema.sql`](supabase/schema.sql).
+With it empty, the site uses the Google Apps Script as described above.
+
+```
+npm install
+npm run test:db                 # schema, row level security and api_* on a local PostgreSQL (PGlite)
+node dev/supabase-mock.mjs      # site on http://localhost:8090 with a fake Supabase on :8091
+                                # sign in as a@example.com; the code is at http://localhost:8091/__mail?email=a@example.com
+```
+
+`supabase/import_from_xlsx.py` turns an .xlsx export of the sheet into SQL for the first import.
+Its output holds your budget data, so never commit it.
+
 ### Releasing a change
 
 GitHub Pages lets browsers cache files for about 10 minutes. After changing any `.js` or `.css` file,

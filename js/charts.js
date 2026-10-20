@@ -222,7 +222,10 @@ export function drawChart(canvas, cfg, built, data) {
       datasets.push(
         isPlan && cfg.kind === 'bar'
           ? { type: 'bar', label: 'Πλάνο', data: built.reference.values, backgroundColor: css('--plan-fill'), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28, stack: stacked ? 'plan' : undefined }
-          : { type: 'line', label: built.reference.label, data: built.reference.values, borderColor: css('--text-primary'), borderWidth: 1.5, borderDash: [], pointRadius: 0, stepped: cfg.groupBy === 'month' ? 'middle' : false, fill: false },
+          : cfg.groupBy === 'month'
+            ? // One horizontal tick per month, drawn across the column, so the limit shows even for a single month.
+              { type: 'line', label: built.reference.label, data: built.reference.values, showLine: false, order: -1, pointStyle: 'line', pointRadius: 24, pointHoverRadius: 24, pointBorderWidth: 3, pointHoverBorderWidth: 3, borderColor: css('--text-primary'), backgroundColor: css('--text-primary') }
+            : { type: 'line', label: built.reference.label, data: built.reference.values, borderColor: css('--text-primary'), borderWidth: 1.5, pointRadius: 0, pointStyle: 'line', fill: false },
       );
     }
   }
@@ -250,7 +253,7 @@ export function drawChart(canvas, cfg, built, data) {
       legend: {
         display: datasets.length > 1 || cfg.kind === 'doughnut',
         position: 'bottom',
-        labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, boxHeight: 10, padding: 14, color: ink2 },
+        labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, boxHeight: 10, padding: 14, color: ink2, sort: (a, b) => a.datasetIndex - b.datasetIndex },
       },
       tooltip: {
         backgroundColor: css('--tooltip-bg'),

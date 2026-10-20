@@ -116,6 +116,18 @@
         <button type="button" data-theme-choice="light">Φωτεινό</button>
         <button type="button" data-theme-choice="dark">Σκούρο</button>
       </div>
+      <div id="share-section">
+        <label class="lbl">Άλλη συσκευή</label>
+        <button type="button" class="btn" id="share-connect">Σύνδεση άλλης συσκευής (QR code)</button>
+        <div id="share-box" class="share-box" hidden>
+          <div id="qr" class="qr" aria-label="QR code σύνδεσης"></div>
+          <p class="small muted">Σκάναρε με την κάμερα του άλλου κινητού, ή στείλε το link. Το link περιέχει το κλειδί, οπότε στείλ' το μόνο σε δικά σας άτομα.</p>
+          <div class="seg">
+            <button type="button" id="share-copy">Αντιγραφή link</button>
+            <button type="button" id="share-send">Αποστολή…</button>
+          </div>
+        </div>
+      </div>
       <div class="err" id="settings-err" hidden></div>
       <div class="row-actions">
         <button type="button" class="btn danger" id="logout">Αποσύνδεση από αυτή τη συσκευή</button>

@@ -681,10 +681,69 @@ function applyTheme() {
   document.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === t)));
 }
 
+/* -------- connect another device (QR / link) -------- */
+
+const QR_LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+
+function connectLink() {
+  const payload = b64url(JSON.stringify({ u: state.settings.url, k: state.settings.key }));
+  return `${location.origin}${location.pathname}#connect=${payload}`;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (window.qrcode) return resolve();
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error('Δεν φορτώθηκε το QR code. Χρησιμοποίησε την αντιγραφή link.'));
+    document.head.appendChild(el);
+  });
+}
+
+async function showShare() {
+  const box = $('#share-box');
+  box.hidden = !box.hidden;
+  if (box.hidden) return;
+  const link = connectLink();
+  $('#share-send').hidden = !navigator.share;
+  try {
+    await loadScript(QR_LIB);
+    const qr = window.qrcode(0, 'M');
+    qr.addData(link);
+    qr.make();
+    $('#qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  } catch (e) {
+    $('#qr').hidden = true;
+    toast(e.message, true);
+  }
+}
+
+/** Opening a #connect=… link saves the connection on this device. Returns true if it handled one. */
+function consumeConnectLink() {
+  const m = /^#connect=([\w-]+)$/.exec(location.hash);
+  if (!m) return false;
+  history.replaceState(null, '', `${location.pathname}#overview`);
+  try {
+    const { u, k } = JSON.parse(unb64url(m[1]));
+    if (!u || !k) throw new Error();
+    state.settings = { ...state.settings, url: u, key: k };
+    saveSettings(state.settings);
+    toast('Η συσκευή συνδέθηκε');
+  } catch {
+    toast('Το link σύνδεσης δεν είναι σωστό.', true);
+  }
+  return true;
+}
+
 function openSettings() {
   $('#settings-fields').innerHTML = settingsFieldsHtml();
   $('#settings-err').hidden = true;
   $('#logout').hidden = !configured();
+  $('#share-section').hidden = !configured();
+  $('#share-box').hidden = true;
   applyTheme();
   $('#settings-dlg').showModal();
 }
@@ -702,10 +761,32 @@ function go_(view) {
 
 function init() {
   applyTheme();
+  consumeConnectLink();
   state.view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => go_(t.dataset.view)));
-  window.addEventListener('hashchange', () => go_(location.hash.slice(1)));
+  window.addEventListener('hashchange', () => {
+    if (consumeConnectLink()) {
+      state.data = null;
+      state.month = null;
+      renderAll();
+      fetchData();
+      return;
+    }
+    go_(location.hash.slice(1));
+  });
+  $('#share-connect').addEventListener('click', showShare);
+  $('#share-copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(connectLink());
+      toast('Το link αντιγράφηκε');
+    } catch {
+      prompt('Αντίγραψε το link:', connectLink());
+    }
+  });
+  $('#share-send').addEventListener('click', () =>
+    navigator.share({ title: 'Οικογενειακά έξοδα', text: 'Σύνδεση στα οικογενειακά έξοδα', url: connectLink() }).catch(() => {}),
+  );
   $('#month').addEventListener('change', (e) => setMonth(e.target.value));
   $('#prev-month').addEventListener('click', () => setMonth(addMonths(state.month, -1)));
   $('#next-month').addEventListener('click', () => setMonth(addMonths(state.month, 1)));

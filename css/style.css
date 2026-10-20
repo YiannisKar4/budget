@@ -389,3 +389,9 @@ dialog { overflow-y: auto; overscroll-behavior: contain; }
   label.lbl { margin-top: 8px; }
   .amount-input { font-size: 22px !important; padding: 6px 10px !important; }
 }
+
+/* ---------- connect another device ---------- */
+.share-box { margin-top: 12px; text-align: center; }
+.qr { display: inline-block; background: #fff; padding: 12px; border-radius: 12px; line-height: 0; }
+.qr img, .qr svg { width: 200px; height: 200px; image-rendering: pixelated; }
+.share-box .seg { margin-top: 8px; }

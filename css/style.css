@@ -364,3 +364,28 @@ label.lbl { display: block; font-size: 13px; font-weight: 600; color: var(--text
 code { background: var(--surface-sunk); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
 
 @media (max-width: 520px) { .brand { display: none; } .topbar-inner { gap: 4px; } .month-picker { margin-right: auto; } }
+
+/* ---------- small-screen fixes ---------- */
+.tiles > .card + .card { margin-top: 0; }
+.tile .value { font-size: clamp(19px, 6vw, 26px); white-space: nowrap; }
+.check { min-height: 32px; }
+dialog { overflow-y: auto; overscroll-behavior: contain; }
+.dlg .row-actions {
+  position: sticky; bottom: 0; z-index: 1;
+  background: var(--surface-1);
+  margin: 16px -16px -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 360px) {
+  main { padding: 12px; }
+  .icon-btn { width: 32px; height: 32px; }
+  .month-picker select { min-width: 0; font-size: 14px; }
+  .tiles { gap: 8px; }
+  .tile { padding: 12px; }
+  .amount-input { font-size: 24px !important; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .dlg { padding-top: 12px; }
+  label.lbl { margin-top: 8px; }
+  .amount-input { font-size: 22px !important; padding: 6px 10px !important; }
+}

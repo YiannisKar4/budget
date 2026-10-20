@@ -1,6 +1,6 @@
-import { call, loadSettings, saveSettings, ApiError } from './api.js';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js';
-import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js';
+import { call, loadSettings, saveSettings, ApiError } from './api.js?v=6';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=6';
+import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=6';
 
 /* ------------------------------------------------------------------ state */
 
@@ -683,7 +683,8 @@ function applyTheme() {
 
 /* -------- connect another device (QR / link) -------- */
 
-const QR_LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+// Bundled in the repo (MIT), so it doesn't depend on an outside CDN.
+const QR_LIB = 'js/vendor/qrcode-1.4.4.js';
 const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 

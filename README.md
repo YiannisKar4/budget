@@ -92,3 +92,9 @@ node dev/mock-server.mjs path/to/grid.json 8080
 
 `grid.json` holds the cell values of the three tabs (`{"<tab name>": [[...row...], ...]}`, dates as `{"$date": "yyyy-MM-dd"}`).
 Keep real exports out of the repo.
+
+### Releasing a change
+
+GitHub Pages lets browsers cache files for about 10 minutes. After changing any `.js` or `.css` file,
+raise the `?v=` number everywhere it appears (`index.html`, the imports at the top of `js/app.js` and `js/charts.js`),
+so every phone loads the new files together instead of mixing old and new.

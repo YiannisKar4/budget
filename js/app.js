@@ -259,14 +259,15 @@ function renderLogin() {
     <div class="setup card">
       <h1>Σύνδεση</h1>
       <form id="login-form" novalidate>
-        <p class="muted">Γράψε το email σου. Θα σου έρθει ένας κωδικός και ένα link σύνδεσης.</p>
+        <p class="muted">Γράψε το email σου και θα σου έρθει ένα link σύνδεσης.</p>
         <label class="lbl" for="l-email">Email</label>
         <input class="field" id="l-email" type="email" inputmode="email" autocomplete="email" value="${esc(email)}" required>
         <div class="err" id="login-err" hidden></div>
-        <div class="row-actions"><button class="btn primary" type="submit" id="login-send">Στείλε μου κωδικό</button></div>
+        <div class="row-actions"><button class="btn primary" type="submit" id="login-send">Στείλε μου link</button></div>
       </form>
       <form id="code-form" novalidate hidden>
-        <p class="muted">Στείλαμε email στο <b id="l-sent-to"></b>. Γράψε εδώ τον κωδικό του, ή πάτα το link μέσα στο email.</p>
+        <p class="muted">Στείλαμε email στο <b id="l-sent-to"></b>. Άνοιξέ το και πάτα το link σύνδεσης.</p>
+        <p class="small muted">Αν το email έχει και κωδικό, μπορείς να τον γράψεις εδώ.</p>
         <label class="lbl" for="l-code">Κωδικός</label>
         <input class="field amount-input" id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" required>
         <div class="err" id="code-err" hidden></div>
@@ -298,7 +299,7 @@ function renderLogin() {
     } catch (e) {
       fail(err, e.message);
     } finally {
-      busy(btn, false, 'Στείλε μου κωδικό');
+      busy(btn, false, 'Στείλε μου link');
     }
   });
   $('#login-back').addEventListener('click', () => {

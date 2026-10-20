@@ -216,11 +216,15 @@ http.createServer(async (req, res) => {
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' };
 http.createServer((req, res) => {
   const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-  if (p === '/js/config.js') {
+  if (p.endsWith('/js/config.js') && fs.existsSync(path.join(root, p))) {
+    // The real config, pointed at this fake project.
+    const real = fs.readFileSync(path.join(root, p), 'utf8')
+      .replace(/SUPABASE_URL = '[^']*'/, `SUPABASE_URL = '${API}'`)
+      .replace(/SUPABASE_ANON_KEY = '[^']*'/, `SUPABASE_ANON_KEY = '${ANON_KEY}'`);
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
-    return res.end(`export const SUPABASE_URL = '${API}';\nexport const SUPABASE_ANON_KEY = '${ANON_KEY}';\n`);
+    return res.end(real);
   }
-  const file = path.join(root, p === '/' ? 'index.html' : p);
+  const file = path.join(root, p.endsWith('/') ? `${p}index.html` : p);
   if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);

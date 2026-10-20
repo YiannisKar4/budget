@@ -1,8 +1,8 @@
 // A small Supabase client: email sign-in (code or magic link) and calls to the api_* functions.
 // It uses Supabase's REST endpoints directly, so the site needs no extra library.
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=7';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, STORAGE_PREFIX } from './config.js?v=7';
 
-const SESSION_KEY = 'budget.session';
+const SESSION_KEY = `${STORAGE_PREFIX}.session`;
 
 export class AuthError extends Error {}
 

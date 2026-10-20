@@ -2,8 +2,9 @@
 // Google Apps Script web app attached to the sheet. Both answer with the same JSON.
 // Apps Script requests are sent as text/plain so the browser does not need a CORS preflight.
 import * as supa from './supa.js?v=7';
+import { STORAGE_PREFIX } from './config.js?v=7';
 
-const SETTINGS_KEY = 'budget.settings';
+const SETTINGS_KEY = `${STORAGE_PREFIX}.settings`;
 
 export function loadSettings() {
   try {

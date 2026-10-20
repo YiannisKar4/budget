@@ -1,12 +1,13 @@
 import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=7';
 import * as supa from './supa.js?v=7';
+import { STORAGE_PREFIX } from './config.js?v=7';
 import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=7';
 import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=7';
 
 /* ------------------------------------------------------------------ state */
 
-const CACHE_KEY = 'budget.cache';
-const CHARTS_KEY = 'budget.charts';
+const CACHE_KEY = `${STORAGE_PREFIX}.cache`;
+const CHARTS_KEY = `${STORAGE_PREFIX}.charts`;
 const VIEWS = ['overview', 'entries', 'charts', 'plans'];
 
 const state = {
@@ -250,7 +251,7 @@ async function connect(url, key, errEl, btn) {
 
 /* -------- sign in by email (Supabase) -------- */
 
-const LOGIN_EMAIL_KEY = 'budget.loginEmail';
+const LOGIN_EMAIL_KEY = `${STORAGE_PREFIX}.loginEmail`;
 
 function renderLogin() {
   let email = '';

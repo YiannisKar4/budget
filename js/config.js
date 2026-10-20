@@ -5,3 +5,7 @@
 // user, and Row Level Security in the database decides what that user can see.
 export const SUPABASE_URL = 'https://ljsdwqpkqkvtyjrevwnk.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_JWcVk0Y2g8iTLPOiRtuaIA_PtgWwpn7';
+
+// Start of every key this site saves in the browser. A test copy of the site on the
+// same address uses a different prefix, so it never touches the real site's settings.
+export const STORAGE_PREFIX = 'budget';

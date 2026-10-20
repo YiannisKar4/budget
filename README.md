@@ -1,8 +1,11 @@
 # Οικογενειακά έξοδα: budget tracker
 
-A small website for the family budget Google Sheet (**Μηνιαία Έξοδα**).
-The Google Sheet stays the database. The website reads it and writes to it through
-a small Google Apps Script, so the sheet and its formulas keep working as before.
+A small website for the family budget, first built on the Google Sheet **Μηνιαία Έξοδα**.
+
+**Since October 2026 the data lives in Supabase (PostgreSQL, free plan).** Each person signs in
+with their own email (a sign-in link), and only the emails in the `allowed_emails` table get in.
+See [Supabase version](#supabase-version) below. The Google Sheet setup that follows still works:
+empty `js/config.js` and the site uses the sheet again.
 
 - **Μήνας**: the month overview (limit, actual spending, fixed bills still due, plan vs paid per category).
   It uses the same maths as the **Έλεγχος μήνα** tab.

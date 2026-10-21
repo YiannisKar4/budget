@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=10';
-import * as supa from './supa.js?v=10';
-import { STORAGE_PREFIX } from './config.js?v=10';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=10';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=10';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=11';
+import * as supa from './supa.js?v=11';
+import { STORAGE_PREFIX } from './config.js?v=11';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=11';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=11';
 
 /* ------------------------------------------------------------------ state */
 
@@ -85,13 +85,33 @@ function saveCache() {
 /* ------------------------------------------------------------------- toast */
 
 let toastTimer;
+const TOAST_ICON = {
+  ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+};
+/** A small note in the top-right corner (top of the screen on phones). It goes away on its own or with ✕. */
 function toast(msg, isError = false) {
   const t = $('#toast');
-  t.textContent = msg;
   t.className = `toast${isError ? ' error' : ''}`;
+  t.innerHTML = `<span class="toast-icon">${isError ? TOAST_ICON.error : TOAST_ICON.ok}</span><span class="toast-msg"></span><button type="button" class="toast-x" aria-label="Κλείσιμο">${TOAST_ICON.close}</button>`;
+  $('.toast-msg', t).textContent = msg;
+  $('.toast-x', t).addEventListener('click', hideToast);
   t.hidden = false;
+  // As a popover it shows above open dialogs too (where supported).
+  try { if (t.showPopover && !t.matches(':popover-open')) t.showPopover(); } catch { /* not supported */ }
+  requestAnimationFrame(() => t.classList.add('in'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), isError ? 6000 : 2600);
+  toastTimer = setTimeout(hideToast, isError ? 6000 : 3200);
+}
+function hideToast() {
+  const t = $('#toast');
+  clearTimeout(toastTimer);
+  t.classList.remove('in');
+  toastTimer = setTimeout(() => {
+    t.hidden = true;
+    try { if (t.hidePopover && t.matches(':popover-open')) t.hidePopover(); } catch { /* not supported */ }
+  }, 200);
 }
 
 /* -------------------------------------------------------------------- data */
@@ -798,7 +818,7 @@ function saveAnalysis(ev) {
   $('#analysis-dlg').close();
   renderAll();
   window.scrollTo({ top: 0 });
-  toast('Προστέθηκαν 5 γραφήματα στην κορυφή.');
+  toast('Προστέθηκαν 5 γραφήματα στην αρχή της σελίδας');
 }
 
 function saveChart(ev) {

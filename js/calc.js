@@ -121,3 +121,23 @@ export function defaultMonth(data, today = new Date()) {
   if (now < known[0]) return known[0];
   return known[known.length - 1];
 }
+
+/* ------------------------------------------------- loose text matching */
+
+// Descriptions are typed freely ("Καφές", "καφες", "kafes", "καφεσ "), so they are compared
+// in a loose form: lower case, no accents, one kind of sigma, Greeklish turned into Greek,
+// and runs of spaces or punctuation turned into one space.
+const GREEKLISH = [
+  ['th', 'θ'], ['ch', 'χ'], ['ps', 'ψ'], ['ks', 'ξ'], ['ou', 'ου'],
+  ['a', 'α'], ['b', 'β'], ['c', 'κ'], ['d', 'δ'], ['e', 'ε'], ['f', 'φ'], ['g', 'γ'], ['h', 'η'], ['i', 'ι'],
+  ['j', 'τζ'], ['k', 'κ'], ['l', 'λ'], ['m', 'μ'], ['n', 'ν'], ['o', 'ο'], ['p', 'π'], ['q', 'κ'], ['r', 'ρ'],
+  ['s', 'σ'], ['t', 'τ'], ['u', 'ου'], ['v', 'β'], ['w', 'ω'], ['x', 'χ'], ['y', 'υ'], ['z', 'ζ'],
+];
+
+export function looseText(s) {
+  let t = String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ς/g, 'σ');
+  if (/[a-z]/.test(t)) {
+    for (const [lat, gr] of GREEKLISH) t = t.split(lat).join(gr);
+  }
+  return t.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}

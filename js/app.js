@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=9';
-import * as supa from './supa.js?v=9';
-import { STORAGE_PREFIX } from './config.js?v=9';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=9';
-import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=9';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=10';
+import * as supa from './supa.js?v=10';
+import { STORAGE_PREFIX } from './config.js?v=10';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=10';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=10';
 
 /* ------------------------------------------------------------------ state */
 
@@ -17,7 +17,7 @@ const state = {
   view: 'overview',
   loading: false,
   lastFetch: 0,
-  entryFilter: { q: '', category: '', payer: '', scope: 'month' },
+  entryFilter: { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '' },
   chartPayer: '',
   charts: loadCharts(),
   chartInstances: [],
@@ -410,12 +410,13 @@ function renderOverview() {
 function renderEntries() {
   const f = state.entryFilter;
   const d = state.data;
-  const q = f.q.trim().toLowerCase();
+  const q = looseText(f.q);
+  const inScope = (e) => (f.scope === 'all' ? true : f.scope === 'range' ? e.date >= f.from && e.date <= f.to : monthOf(e.date) === state.month);
   const list = d.entries
-    .filter((e) => f.scope === 'all' || monthOf(e.date) === state.month)
-    .filter((e) => !f.category || e.category === f.category)
+    .filter(inScope)
+    .filter((e) => (f.cats ? f.cats.includes(e.category) : !f.category || e.category === f.category))
     .filter((e) => !f.payer || e.payer === f.payer)
-    .filter((e) => !q || `${e.description} ${e.comments} ${e.category}`.toLowerCase().includes(q))
+    .filter((e) => !q || looseText(`${e.description} ${e.comments} ${e.category}`).includes(q))
     .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
   const total = list.reduce((s, e) => s + e.amount, 0);
 
@@ -425,19 +426,27 @@ function renderEntries() {
     if (e.date !== lastDate) {
       const dayTotal = list.filter((x) => x.date === e.date).reduce((s, x) => s + x.amount, 0);
       const dt = new Date(`${e.date}T12:00:00`);
-      html += `<div class="day-head"><span>${DAYS[dt.getDay()]} ${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0, 3)}${f.scope === 'all' ? ` ${dt.getFullYear()}` : ''}</span><span class="num">${euro(dayTotal)}</span></div>`;
+      html += `<div class="day-head"><span>${DAYS[dt.getDay()]} ${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0, 3)}${f.scope !== 'month' ? ` ${dt.getFullYear()}` : ''}</span><span class="num">${euro(dayTotal)}</span></div>`;
       lastDate = e.date;
     }
     const sub = [e.description, e.payer, e.comments].filter(Boolean).map(esc).join(' · ');
     html += `<button class="entry" data-id="${esc(e.id)}"><span class="t">${esc(e.category)}</span><span class="a">${euro(e.amount)}</span><span class="s">${sub || '&nbsp;'}</span></button>`;
   }
 
+  const catOptions = [...d.categories];
+  if (f.category && !catOptions.includes(f.category)) catOptions.push(f.category);
   $('#main').innerHTML = `
+    ${f.source ? `
+    <div class="drill-bar">
+      <button class="btn" id="drill-back">← Γραφήματα</button>
+      <span class="drill-src">${esc(f.source)}</span>
+      <button class="btn" id="drill-clear">Καθαρισμός</button>
+    </div>` : ''}
     <div class="filters">
       <input id="ef-q" type="search" placeholder="Αναζήτηση" value="${esc(f.q)}">
-      <select id="ef-cat"><option value="">Όλες οι κατηγορίες</option>${d.categories.map((c) => `<option ${c === f.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      <select id="ef-cat"><option value="">Όλες οι κατηγορίες</option>${f.cats ? `<option value="__multi" selected>${f.cats.length} κατηγορίες</option>` : ''}${catOptions.map((c) => `<option ${!f.cats && c === f.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
       <select id="ef-payer"><option value="">Όλοι</option>${d.payers.map((p) => `<option ${p === f.payer ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-      <select id="ef-scope"><option value="month">${monthLong(state.month)}</option><option value="all" ${f.scope === 'all' ? 'selected' : ''}>Όλοι οι μήνες</option></select>
+      <select id="ef-scope"><option value="month">${monthLong(state.month)}</option>${f.scope === 'range' ? `<option value="range" selected>${dateRangeLabel(f.from, f.to)}</option>` : ''}<option value="all" ${f.scope === 'all' ? 'selected' : ''}>Όλοι οι μήνες</option></select>
     </div>
     <div class="list-total"><span>${list.length} ${list.length === 1 ? 'πληρωμή' : 'πληρωμές'}</span><span class="num">${euro(total)}</span></div>
     ${list.length ? html : '<div class="empty">Δεν υπάρχουν πληρωμές με αυτά τα φίλτρα.</div>'}`;
@@ -449,12 +458,41 @@ function renderEntries() {
     if (k === 'q') { const i = $('#ef-q'); i.focus(); i.setSelectionRange(pos, pos); }
   };
   $('#ef-q').addEventListener('input', upd('q'));
-  $('#ef-cat').addEventListener('change', upd('category'));
+  $('#ef-cat').addEventListener('change', (ev) => { state.entryFilter.cats = null; upd('category')(ev); });
+  $('#drill-back')?.addEventListener('click', () => go_('charts'));
+  $('#drill-clear')?.addEventListener('click', () => {
+    state.entryFilter = { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '' };
+    renderEntries();
+  });
   $('#ef-payer').addEventListener('change', upd('payer'));
   $('#ef-scope').addEventListener('change', upd('scope'));
   document.querySelectorAll('.entry').forEach((el) =>
     el.addEventListener('click', () => openEntry(state.data.entries.find((e) => e.id === el.dataset.id))),
   );
+}
+
+/** '2026-10-01', '2026-12-31' → '1/10 – 31/12/2026'. */
+function dateRangeLabel(from, to) {
+  const f = from.split('-').map(Number);
+  const t = to.split('-').map(Number);
+  if (from === to) return `${f[2]}/${f[1]}/${f[0]}`;
+  return `${f[2]}/${f[1]}${f[0] !== t[0] ? `/${f[0]}` : ''} – ${t[2]}/${t[1]}/${t[0]}`;
+}
+
+/** Opens Πληρωμές with the payments behind a chart column, slice or card. */
+function drillTo(filter, source) {
+  const cats = filter.categories || [];
+  state.entryFilter = {
+    q: filter.q || '',
+    category: cats.length === 1 ? cats[0] : '',
+    cats: cats.length > 1 ? cats : null,
+    payer: filter.payer || '',
+    scope: 'range',
+    from: filter.from,
+    to: filter.to,
+    source,
+  };
+  go_('entries');
 }
 
 /* -------- entry dialog -------- */
@@ -565,12 +603,44 @@ async function deleteEntry() {
 
 /* -------- charts -------- */
 
+function sparkline(points) {
+  const max = Math.max(...points.map((p) => p.value), 1);
+  const w = 120, h = 32, bw = w / points.length;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${points
+    .map((p, i) => {
+      const bh = Math.max(p.value > 0 ? 2 : 0, (p.value / max) * (h - 2));
+      return `<rect x="${(i * bw + 1).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" class="${i === points.length - 1 ? 'now' : ''}"/>`;
+    })
+    .join('')}</svg>`;
+}
+
+function tilesHtml(tiles) {
+  return `<div class="cat-tiles">${tiles
+    .map((t, i) => {
+      const pct = t.plan ? Math.min(100, (t.paid / t.plan) * 100) : 0;
+      const vsAvg = t.avg ? Math.round(((t.paid - t.avg) / t.avg) * 100) : null;
+      const isCurrent = state.month === monthOf(todayIso());
+      return `
+      <button class="cat-tile tile-link ${t.status}" data-i="${i}">
+        <span class="ct-name">${esc(t.category)}</span>
+        <span class="ct-paid num">${euro(t.paid)}</span>
+        <span class="ct-plan">${t.plan === null ? 'χωρίς πλάνο' : `από ${euro(t.plan)} πλάνο${t.paid > t.plan ? ` · +${euro(Math.round((t.paid - t.plan) * 100) / 100)}` : ''}`}</span>
+        ${t.plan ? `<span class="ct-bar"><span style="width:${pct.toFixed(0)}%"></span></span>` : ''}
+        <span class="ct-avg">${t.avg === null ? 'Δεν υπάρχουν προηγούμενοι μήνες ακόμα' : `Μ.ό. ${t.months} ${t.months === 1 ? 'μήνα' : 'μηνών'}: ${euro(t.avg)}${vsAvg === null ? '' : ` · ${vsAvg > 0 ? '▲' : vsAvg < 0 ? '▼' : ''} ${Math.abs(vsAvg)}%`}${isCurrent ? ' (μέχρι σήμερα)' : ''}`}</span>
+        ${t.spark.length > 1 ? sparkline(t.spark) : ''}
+        <span class="ct-spark-lbl">${t.spark.length > 1 ? `${monthShort(t.spark[0].month)} – ${monthShort(t.spark[t.spark.length - 1].month)}` : ''}</span>
+      </button>`;
+    })
+    .join('')}</div>`;
+}
+
 function destroyCharts() {
   state.chartInstances.forEach((c) => c.destroy());
   state.chartInstances = [];
 }
 
 function chartSubtitle(cfg) {
+  if (cfg.kind === 'tiles') return `${monthLong(state.month)} · σε σύγκριση με τον μέσο όρο 3 μηνών${state.chartPayer ? ` · ${state.chartPayer}` : ''}`;
   const period = cfg.period === 'month' ? monthLong(state.month) : `${PERIODS[cfg.period]} έως ${monthShort(state.month)}`;
   const cats = cfg.categories && cfg.categories.length ? ` · ${cfg.categories.length} κατηγορίες` : '';
   return `${period}${cats}${state.chartPayer ? ` · ${state.chartPayer}` : ''}`;
@@ -582,7 +652,7 @@ function tableHtml(built) {
   const rows = built.labels.map((l, i) => {
     const vals = built.series.map((s) => s.values[i]);
     if (built.reference) vals.push(built.reference.values[i]);
-    return `<tr><td>${esc(l)}</td>${vals.map((v) => `<td>${v === null ? "—" : euro(v)}</td>`).join('')}</tr>`;
+    return `<tr data-i="${i}" class="drill-row"><td>${esc(l)}</td>${vals.map((v) => `<td>${v === null ? "—" : euro(v)}</td>`).join('')}</tr>`;
   });
   return `<div class="table-scroll"><table class="chart-table"><thead><tr><th></th>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
@@ -592,12 +662,14 @@ function renderCharts() {
   $('#main').innerHTML = `
     <div class="filters">
       <select id="cf-payer" aria-label="Ποιος πλήρωσε"><option value="">Όλοι</option>${d.payers.map((p) => `<option ${p === state.chartPayer ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+      <button class="btn" id="chart-analysis">+ Ανάλυση κατηγοριών</button>
       <button class="btn" id="chart-add">+ Νέο γράφημα</button>
       <button class="btn" id="chart-reset">Επαναφορά</button>
     </div>
     <div class="chart-grid" id="chart-grid"></div>`;
   $('#cf-payer').addEventListener('change', (e) => { state.chartPayer = e.target.value; renderAll(); });
   $('#chart-add').addEventListener('click', () => openChart(null));
+  $('#chart-analysis').addEventListener('click', openAnalysis);
   $('#chart-reset').addEventListener('click', async () => {
     if (!(await ask({ title: 'Επαναφορά γραφημάτων;', text: 'Τα γραφήματα σε αυτή τη συσκευή γυρίζουν στα αρχικά. Οι αλλαγές σου σε αυτά χάνονται.', ok: 'Επαναφορά' }))) return;
     state.charts = structuredClone(DEFAULT_CHARTS);
@@ -608,14 +680,14 @@ function renderCharts() {
   const grid = $('#chart-grid');
   const ctx = { month: state.month, payer: state.chartPayer, today: todayIso() };
   state.charts.forEach((cfg, i) => {
-    const built = buildSeries(d, cfg, ctx);
+    const built = cfg.kind === 'tiles' ? null : buildSeries(d, cfg, ctx);
     const card = document.createElement('section');
     card.className = `card chart-card${cfg.wide ? ' wide' : ''}`;
     card.innerHTML = `
       <div class="card-head">
         <h2>${esc(cfg.title || GROUPS[cfg.groupBy])}<div class="sub">${esc(chartSubtitle(cfg))}</div></h2>
         <div class="chart-tools">
-          <button class="icon-btn" data-act="table" title="Πίνακας / γράφημα" aria-label="Πίνακας">${cfg.showTable ? ICON.chart : ICON.table}</button>
+          ${built ? `<button class="icon-btn" data-act="table" title="Πίνακας / γράφημα" aria-label="Πίνακας">${cfg.showTable ? ICON.chart : ICON.table}</button>` : ''}
           <button class="icon-btn" data-act="up" title="Πάνω" aria-label="Μετακίνηση πάνω" ${i === 0 ? 'disabled' : ''}>${ICON.up}</button>
           <button class="icon-btn" data-act="down" title="Κάτω" aria-label="Μετακίνηση κάτω" ${i === state.charts.length - 1 ? 'disabled' : ''}>${ICON.down}</button>
           <button class="icon-btn" data-act="edit" title="Ρυθμίσεις γραφήματος" aria-label="Επεξεργασία">${ICON.edit}</button>
@@ -624,13 +696,24 @@ function renderCharts() {
       <div class="chart-body"></div>`;
     grid.appendChild(card);
     const body = $('.chart-body', card);
-    if (built.empty) {
+    const title = cfg.title || GROUPS[cfg.groupBy];
+    if (!built) {
+      const tiles = buildTiles(d, cfg, ctx);
+      body.innerHTML = tiles.length ? tilesHtml(tiles) : '<div class="chart-empty">Δεν υπάρχουν πληρωμές αυτόν τον μήνα.</div>';
+      body.querySelectorAll('.tile-link').forEach((el) =>
+        el.addEventListener('click', () => drillTo(tiles[Number(el.dataset.i)].drill, `${title} · ${tiles[Number(el.dataset.i)].category} · ${monthLong(state.month)}`)),
+      );
+    } else if (built.empty) {
       body.innerHTML = '<div class="chart-empty">Δεν υπάρχουν πληρωμές για αυτή την περίοδο.</div>';
     } else if (cfg.showTable || !window.Chart) {
-      body.innerHTML = tableHtml(built) + (window.Chart ? '' : '<p class="small muted">Τα γραφήματα δεν φορτώθηκαν (χωρίς internet;). Εμφανίζεται πίνακας.</p>');
+      body.innerHTML = tableHtml(built) + (window.Chart ? '' : '<p class="small muted">Τα γραφήματα δεν φορτώθηκαν. Εμφανίζεται πίνακας.</p>');
+      body.querySelectorAll('tr[data-i]').forEach((tr) =>
+        tr.addEventListener('click', () => drillTo(built.drill(Number(tr.dataset.i)), `${title} · ${built.labels[Number(tr.dataset.i)]}`)),
+      );
     } else {
-      body.innerHTML = `<div class="chart-box" style="height:${chartHeight(cfg, built)}px"><canvas role="img" aria-label="${esc(cfg.title)}"></canvas></div>`;
-      state.chartInstances.push(drawChart($('canvas', body), cfg, built, d));
+      body.innerHTML = `<div class="chart-box" style="height:${chartHeight(cfg, built)}px"><canvas role="img" aria-label="${esc(cfg.title)}"></canvas></div>
+        <p class="chart-hint">Πάτα σε ${cfg.kind === 'doughnut' ? 'ένα κομμάτι' : 'μια στήλη'} για να δεις τις πληρωμές.</p>`;
+      state.chartInstances.push(drawChart($('canvas', body), cfg, built, d, (filter, label) => drillTo(filter, `${title} · ${label}`)));
     }
     card.querySelectorAll('[data-act]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -666,11 +749,56 @@ function openChart(cfg) {
   $('#c-plan').checked = !!c.showPlan;
   $('#c-cum').checked = !!c.cumulative;
   $('#c-wide').checked = !!c.wide;
+  syncChartForm();
   const chosen = new Set(c.categories || []);
   $('#c-cats').innerHTML = state.data.categories
     .map((cat) => `<label><input type="checkbox" value="${esc(cat)}" ${chosen.has(cat) ? 'checked' : ''}>${esc(cat)}</label>`)
     .join('');
   $('#chart-dlg').showModal();
+}
+
+/** Cards ("tiles") only use the categories, so hide the fields that don't apply to them. */
+function syncChartForm() {
+  const tiles = $('#c-kind').value === 'tiles';
+  for (const id of ['#c-group', '#c-period', '#c-split', '#c-plan', '#c-cum']) $(id).closest('div, label').hidden = tiles;
+  $('#c-cats-lbl').textContent = tiles ? 'Κατηγορίες (καμία επιλογή = οι 4 με τα περισσότερα έξοδα του μήνα)' : 'Κατηγορίες (καμία επιλογή = όλες)';
+}
+
+// Categories worth a closer look, picked by name the first time: super market, personal, other / one-off.
+const ANALYSIS_HINTS = ['super', 'σουπερ', 'προσωπ', 'λοιπ', 'εκτακτ'];
+
+function openAnalysis() {
+  $('#a-cats').innerHTML = state.data.categories
+    .map((cat) => {
+      const on = ANALYSIS_HINTS.some((h) => looseText(cat).includes(looseText(h)));
+      return `<label><input type="checkbox" value="${esc(cat)}" ${on ? 'checked' : ''}>${esc(cat)}</label>`;
+    })
+    .join('');
+  $('#a-err').hidden = true;
+  $('#analysis-dlg').showModal();
+}
+
+function saveAnalysis(ev) {
+  ev.preventDefault();
+  const categories = [...document.querySelectorAll('#a-cats input:checked')].map((i) => i.value);
+  if (!categories.length) { $('#a-err').hidden = false; return; }
+  const name = categories.length === 1 ? categories[0] : `${categories.length} κατηγορίες`;
+  const base = { categories, showPlan: true, cumulative: false, wide: true };
+  const id = Date.now();
+  const added = [
+    { ...base, id: `c${id}a`, title: `${name}: με μια ματιά`, kind: 'tiles', groupBy: 'category', splitBy: 'none', period: 'month' },
+    { ...base, id: `c${id}b`, title: `${name}: ανά μήνα`, kind: 'bar', groupBy: 'month', splitBy: categories.length > 1 ? 'category' : 'payer', period: '12' },
+    { ...base, id: `c${id}c`, title: `${name}: ανά τρίμηνο`, kind: 'bar', groupBy: 'quarter', splitBy: categories.length > 1 ? 'category' : 'payer', period: '24' },
+    { ...base, id: `c${id}d`, title: `${name}: ανά έτος`, kind: 'bar', groupBy: 'year', splitBy: categories.length > 1 ? 'category' : 'payer', period: 'all', wide: false },
+    { ...base, id: `c${id}e`, title: `${name}: πορεία του μήνα`, kind: 'line', groupBy: 'day', splitBy: 'none', period: 'month', cumulative: true, wide: false },
+  ];
+  // New analysis goes on top, so it is the first thing you see.
+  state.charts = added.concat(state.charts);
+  saveCharts();
+  $('#analysis-dlg').close();
+  renderAll();
+  window.scrollTo({ top: 0 });
+  toast('Προστέθηκαν 5 γραφήματα στην κορυφή.');
 }
 
 function saveChart(ev) {
@@ -1181,6 +1309,8 @@ function init() {
   });
 
   $('#chart-form').addEventListener('submit', saveChart);
+  $('#c-kind').addEventListener('change', syncChartForm);
+  $('#analysis-form').addEventListener('submit', saveAnalysis);
   $('#chart-delete').addEventListener('click', async () => {
     if (!state.editingChart) return;
     if (!(await ask({ title: 'Διαγραφή γραφήματος;', text: `«${state.editingChart.title}» θα φύγει από αυτή τη συσκευή.`, ok: 'Διαγραφή', danger: true }))) return;

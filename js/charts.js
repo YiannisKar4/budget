@@ -1,16 +1,29 @@
 // Custom charts: turns a chart definition into series, then draws it with Chart.js.
-import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=9';
+import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=10';
 
 export const GROUPS = {
   category: 'Κατηγορία',
   payer: 'Ποιος πλήρωσε',
   type: 'Πάγιο / Επιπλέον',
-  month: 'Μήνας',
   day: 'Ημέρα',
+  month: 'Μήνας',
+  quarter: 'Τρίμηνο',
+  half: 'Εξάμηνο',
+  year: 'Έτος',
 };
+// Groupings along time: they get the limit or plan as a tick per column.
+export const TIME_GROUPS = new Set(['day', 'month', 'quarter', 'half', 'year']);
 export const SPLITS = { none: 'Χωρίς ανάλυση', payer: 'Ποιος πλήρωσε', type: 'Πάγιο / Επιπλέον', category: 'Κατηγορία (κορυφαίες 7)' };
-export const KINDS = { bar: 'Στήλες', line: 'Γραμμή', doughnut: 'Πίτα (ντόνατ)' };
-export const PERIODS = { month: 'Επιλεγμένος μήνας', 3: 'Τελευταίοι 3 μήνες', 6: 'Τελευταίοι 6 μήνες', 12: 'Τελευταίοι 12 μήνες', all: 'Όλο το διάστημα' };
+export const KINDS = { bar: 'Στήλες', line: 'Γραμμή', doughnut: 'Πίτα (ντόνατ)', tiles: 'Κάρτες: με μια ματιά ανά κατηγορία' };
+export const PERIODS = {
+  month: 'Επιλεγμένος μήνας',
+  3: 'Τελευταίοι 3 μήνες',
+  6: 'Τελευταίοι 6 μήνες',
+  12: 'Τελευταίοι 12 μήνες',
+  24: 'Τελευταίοι 24 μήνες',
+  ytd: 'Από την αρχή της χρονιάς',
+  all: 'Όλο το διάστημα',
+};
 
 export const DEFAULT_CHARTS = [
   { id: 'c1', title: 'Έξοδα ανά κατηγορία', groupBy: 'category', splitBy: 'none', kind: 'bar', period: 'month', showPlan: true, cumulative: false, categories: [] },
@@ -24,6 +37,7 @@ const round2 = (n) => Math.round(n * 100) / 100;
 
 function windowMonths(data, cfg, month) {
   if (cfg.period === 'month') return [month];
+  if (cfg.period === 'ytd') return monthRange(`${month.slice(0, 4)}-01`, month);
   if (cfg.period === 'all') {
     const all = data.entries.map((e) => monthOf(e.date)).concat(month).sort();
     return monthRange(all[0], month);
@@ -64,9 +78,15 @@ export function buildSeries(data, cfg, ctx) {
     type: (e) => typeOf(monthOf(e.date), e.category),
     month: (e) => monthOf(e.date),
     day: (e) => e.date,
+    quarter: (e) => periodKey(monthOf(e.date), 'quarter'),
+    half: (e) => periodKey(monthOf(e.date), 'half'),
+    year: (e) => periodKey(monthOf(e.date), 'year'),
   }[cfg.groupBy];
 
-  if (cfg.groupBy === 'category') {
+  if (['quarter', 'half', 'year'].includes(cfg.groupBy)) {
+    keys = [...new Set(months.map((m) => periodKey(m, cfg.groupBy)))];
+    labelOf = (k) => periodLabel(k);
+  } else if (cfg.groupBy === 'category') {
     const extra = [...new Set(entries.map((e) => e.category))].filter((c) => !data.categories.includes(c));
     keys = data.categories.filter((c) => !cats || cats.has(c)).concat(extra);
   } else if (cfg.groupBy === 'payer') {
@@ -138,36 +158,108 @@ export function buildSeries(data, cfg, ctx) {
         ),
       );
       reference = { label: 'Πλάνο', values };
-    } else if (cfg.groupBy === 'month' && !cats) {
-      reference = { label: 'Ταβάνι', values: keys.map((m) => (data.months.find((x) => x.month === m) || { cap: 0 }).cap) };
-    } else if (cfg.groupBy === 'day' && cfg.cumulative && !cats && months.length === 1) {
-      const cap = (data.months.find((x) => x.month === months[0]) || { cap: 0 }).cap;
-      reference = { label: 'Ταβάνι', values: keys.map(() => cap) };
+    } else if (['month', 'quarter', 'half', 'year'].includes(cfg.groupBy)) {
+      // Whole budget: the limit. Some categories only: the sum of their plans.
+      const inKey = (m, k) => monthSet.has(m) && (cfg.groupBy === 'month' ? m === k : periodKey(m, cfg.groupBy) === k);
+      reference = cats
+        ? { label: 'Πλάνο', values: keys.map((k) => round2(data.plans.filter((p) => cats.has(p.category) && p.plan !== null && inKey(p.month, k)).reduce((s, p) => s + p.plan, 0))) }
+        : { label: 'Ταβάνι', values: keys.map((k) => round2(data.months.filter((x) => inKey(x.month, k)).reduce((s, x) => s + x.cap, 0))) };
+      if (reference.values.every((v) => !v)) reference = null;
+    } else if (cfg.groupBy === 'day' && cfg.cumulative && months.length === 1) {
+      // Running total for one month: against the limit, or the plan of the chosen categories.
+      const total = cats
+        ? round2(data.plans.filter((p) => p.month === months[0] && cats.has(p.category) && p.plan !== null).reduce((s, p) => s + p.plan, 0))
+        : (data.months.find((x) => x.month === months[0]) || { cap: 0 }).cap;
+      reference = total ? { label: cats ? 'Πλάνο' : 'Ταβάνι', values: keys.map(() => total) } : null;
     }
   }
 
   // Doughnuts read best with few slices: keep the top 5, fold the rest into "Άλλα".
   let labels = keys.map(labelOf);
+  let outKeys = [...keys];
   if (cfg.kind === 'doughnut') {
-    const pairs = labels.map((l, i) => [l, series[0].values[i]]).filter(([, v]) => v > 0);
-    pairs.sort((a, b) => b[1] - a[1]);
-    if (pairs.length > 6) {
-      const rest = round2(pairs.slice(5).reduce((s, [, v]) => s + v, 0));
-      pairs.splice(5, pairs.length, [OTHER, rest]);
+    const triples = keys.map((k, i) => [k, labels[i], series[0].values[i]]).filter(([, , v]) => v > 0);
+    triples.sort((a, b) => b[2] - a[2]);
+    if (triples.length > 6) {
+      const rest = round2(triples.slice(5).reduce((s, [, , v]) => s + v, 0));
+      triples.splice(5, triples.length, [OTHER, OTHER, rest]);
     }
-    labels = pairs.map(([l]) => l);
-    series[0].values = pairs.map(([, v]) => v);
+    outKeys = triples.map(([k]) => k);
+    labels = triples.map(([, l]) => l);
+    series[0].values = triples.map(([, , v]) => v);
     reference = null;
   } else if (cfg.groupBy === 'category') {
     // Hide categories with nothing paid and nothing planned.
     const keep = keys.map((_, i) => series.some((s) => s.values[i] > 0) || (reference && reference.values[i] > 0));
     labels = labels.filter((_, i) => keep[i]);
+    outKeys = outKeys.filter((_, i) => keep[i]);
     for (const s of series) s.values = s.values.filter((_, i) => keep[i]);
     if (reference) reference.values = reference.values.filter((_, i) => keep[i]);
   }
 
   const empty = series.every((s) => s.values.every((v) => !v));
-  return { labels, series, reference, empty, months };
+  const drill = (i, seriesKey) => drillFilter(cfg, ctx, months, outKeys[i], seriesKey);
+  return { labels, series, reference, empty, months, drill };
+}
+
+/**
+ * What the Πληρωμές list should show for one column, slice or segment of a chart:
+ * { from, to, categories?, payer?, q? }. Columns that mix things it cannot filter
+ * (e.g. Πάγιο/Επιπλέον, "Άλλα") fall back to the chart's own categories and dates.
+ */
+function drillFilter(cfg, ctx, months, key, seriesKey) {
+  const out = { from: `${months[0]}-01`, to: lastDay(months[months.length - 1]), categories: cfg.categories && cfg.categories.length ? [...cfg.categories] : [], payer: ctx.payer || '', q: '' };
+  const apply = (dim, k) => {
+    if (k === undefined || k === null || k === '__all' || k === OTHER) return;
+    if (dim === 'category') out.categories = [k];
+    else if (dim === 'payer' && k !== '—') out.payer = k;
+    else if (dim === 'day') { out.from = k; out.to = k; }
+    else if (dim === 'month') { out.from = `${k}-01`; out.to = lastDay(k); }
+    else if (['quarter', 'half', 'year'].includes(dim)) {
+      const inside = months.filter((m) => periodKey(m, dim) === k);
+      if (inside.length) { out.from = `${inside[0]}-01`; out.to = lastDay(inside[inside.length - 1]); }
+    }
+  };
+  apply(cfg.groupBy, key);
+  if (cfg.kind !== 'doughnut' && cfg.splitBy && cfg.splitBy !== 'none') apply(cfg.splitBy, seriesKey);
+  return out;
+}
+
+/**
+ * "At a glance" cards: one per category, for the selected month.
+ * Each has the month's spending, its plan, the average of the 3 months before
+ * (only months that have any payments in the data) and the last 6 months for a sparkline.
+ */
+export function buildTiles(data, cfg, ctx) {
+  const month = ctx.month;
+  const firstMonth = data.entries.map((e) => monthOf(e.date)).sort()[0] || month;
+  const spark = monthRange(addMonths(month, -5), month).filter((m) => m >= firstMonth);
+  const before = monthRange(addMonths(month, -3), addMonths(month, -1)).filter((m) => m >= firstMonth);
+  const paidIn = (cat, m) => round2(data.entries.filter((e) => e.category === cat && monthOf(e.date) === m && (!ctx.payer || e.payer === ctx.payer)).reduce((s, e) => s + e.amount, 0));
+  let cats = cfg.categories && cfg.categories.length ? cfg.categories : null;
+  if (!cats) {
+    // No choice made: the categories with the most spending this month.
+    const totals = new Map();
+    for (const e of data.entries) if (monthOf(e.date) === month) totals.set(e.category, (totals.get(e.category) || 0) + e.amount);
+    cats = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c]) => c);
+  }
+  return cats.map((cat) => {
+    const paid = paidIn(cat, month);
+    const planRow = data.plans.find((p) => p.month === month && p.category === cat);
+    const plan = planRow ? planRow.plan : null;
+    const avg = before.length ? round2(before.reduce((s, m) => s + paidIn(cat, m), 0) / before.length) : null;
+    const status = plan === null ? 'noplan' : paid > plan ? 'over' : paid >= plan * 0.8 ? 'near' : 'ok';
+    return {
+      category: cat,
+      paid,
+      plan,
+      avg,
+      months: before.length,
+      status,
+      spark: spark.map((m) => ({ month: m, value: paidIn(cat, m) })),
+      drill: { from: `${month}-01`, to: lastDay(month), categories: [cat], payer: ctx.payer || '', q: '' },
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ render */
@@ -189,7 +281,7 @@ function seriesColor(cfg, key, i, data) {
 export const euro = (v) =>
   new Intl.NumberFormat('el-GR', { style: 'currency', currency: 'EUR', maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);
 
-export function drawChart(canvas, cfg, built, data) {
+export function drawChart(canvas, cfg, built, data, onPick) {
   const Chart = window.Chart;
   const grid = css('--grid');
   const ink2 = css('--text-secondary');
@@ -219,10 +311,11 @@ export function drawChart(canvas, cfg, built, data) {
     });
     if (built.reference) {
       const isPlan = built.reference.label === 'Πλάνο';
+      const tick = TIME_GROUPS.has(cfg.groupBy) && cfg.groupBy !== 'day';
       datasets.push(
-        isPlan && cfg.kind === 'bar'
+        isPlan && cfg.kind === 'bar' && !tick
           ? { type: 'bar', label: 'Πλάνο', data: built.reference.values, backgroundColor: css('--plan-fill'), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28, stack: stacked ? 'plan' : undefined }
-          : cfg.groupBy === 'month'
+          : tick
             ? // One horizontal tick per month, drawn across the column, so the limit shows even for a single month.
               { type: 'line', label: built.reference.label, data: built.reference.values, showLine: false, order: -1, pointStyle: 'line', pointRadius: 24, pointHoverRadius: 24, pointBorderWidth: 3, pointHoverBorderWidth: 3, borderColor: css('--text-primary'), backgroundColor: css('--text-primary') }
             : { type: 'line', label: built.reference.label, data: built.reference.values, borderColor: css('--text-primary'), borderWidth: 1.5, pointRadius: 0, pointStyle: 'line', fill: false },
@@ -269,6 +362,30 @@ export function drawChart(canvas, cfg, built, data) {
       },
     },
   };
+  if (onPick) {
+    // Tap a column, slice or segment to see its payments. Plan/limit marks are not payments.
+    const hit = (chart, evt) => {
+      const exact = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false)
+        .filter((el) => el.datasetIndex < built.series.length);
+      if (exact.length) return exact[0];
+      if (cfg.kind === 'doughnut') return null;
+      const col = chart.getElementsAtEventForMode(evt, 'index', { intersect: false, axis: horizontal ? 'y' : 'x' }, false)
+        .filter((el) => el.datasetIndex < built.series.length);
+      return col.length ? { index: col[0].index, datasetIndex: built.series.length > 1 ? -1 : 0 } : null;
+    };
+    options.onClick = (evt, _els, chart) => {
+      const el = hit(chart, evt);
+      if (!el) return;
+      const s = built.series[el.datasetIndex];
+      const filter = built.drill(el.index, s ? s.key : undefined);
+      // Run after Chart.js has finished with this click: opening the list destroys the chart.
+      const label = s && built.series.length > 1 ? `${built.labels[el.index]} · ${s.label}` : built.labels[el.index];
+      setTimeout(() => onPick(filter, label));
+    };
+    options.onHover = (evt, _els, chart) => {
+      chart.canvas.style.cursor = hit(chart, evt) ? 'pointer' : 'default';
+    };
+  }
   if (cfg.kind === 'doughnut') {
     options.cutout = '62%';
   } else {
@@ -287,10 +404,28 @@ export function chartHeight(cfg, built) {
 
 /* ----------------------------------------------------------------- helpers */
 
+/** '2026-10' → '2026-Q4' | '2026-H2' | '2026'. */
+export function periodKey(month, unit) {
+  const y = month.slice(0, 4);
+  const m = Number(month.slice(5, 7));
+  if (unit === 'quarter') return `${y}-Q${Math.ceil(m / 3)}`;
+  if (unit === 'half') return `${y}-H${m <= 6 ? 1 : 2}`;
+  return y;
+}
+
+function periodLabel(key) {
+  const y = key.slice(2, 4);
+  const q = /-Q(\d)$/.exec(key);
+  if (q) return `${MONTHS_SHORT[(q[1] - 1) * 3]}–${MONTHS_SHORT[q[1] * 3 - 1]} ${y}`;
+  const h = /-H(\d)$/.exec(key);
+  if (h) return h[1] === '1' ? `Ιαν–Ιουν ${y}` : `Ιουλ–Δεκ ${y}`;
+  return key;
+}
+
 const MONTHS_SHORT = ['Ιαν', 'Φεβ', 'Μαρ', 'Απρ', 'Μάι', 'Ιουν', 'Ιουλ', 'Αυγ', 'Σεπ', 'Οκτ', 'Νοε', 'Δεκ'];
 export const monthShort = (m) => `${MONTHS_SHORT[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`;
 
-function lastDay(month) {
+export function lastDay(month) {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return `${month}-${String(d).padStart(2, '0')}`;

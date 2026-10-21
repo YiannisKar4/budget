@@ -1,5 +1,5 @@
 // Custom charts: turns a chart definition into series, then draws it with Chart.js.
-import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=13';
+import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=14';
 
 export const GROUPS = {
   category: 'Κατηγορία',
@@ -106,6 +106,8 @@ export function buildSeries(data, cfg, ctx) {
 
   // Secondary split (stacked series).
   let splitKeys = ['__all'];
+  // What "Άλλα" stands for, so tapping it opens exactly those categories.
+  const otherOf = {};
   let splitOf = () => '__all';
   if (cfg.kind !== 'doughnut' && cfg.splitBy && cfg.splitBy !== 'none' && cfg.splitBy !== cfg.groupBy) {
     if (cfg.splitBy === 'payer') {
@@ -121,6 +123,7 @@ export function buildSeries(data, cfg, ctx) {
       const topSet = new Set(top);
       splitOf = (e) => (topSet.has(e.category) ? e.category : OTHER);
       splitKeys = totals.size > 7 ? [...top, OTHER] : top;
+      otherOf.category = [...totals.keys()].filter((c) => !topSet.has(c));
     }
   }
 
@@ -182,6 +185,7 @@ export function buildSeries(data, cfg, ctx) {
     triples.sort((a, b) => b[2] - a[2]);
     if (triples.length > 6) {
       const rest = round2(triples.slice(5).reduce((s, [, , v]) => s + v, 0));
+      otherOf[cfg.groupBy] = triples.slice(5).map(([k]) => k);
       triples.splice(5, triples.length, [OTHER, OTHER, rest]);
     }
     outKeys = triples.map(([k]) => k);
@@ -198,7 +202,7 @@ export function buildSeries(data, cfg, ctx) {
   }
 
   const empty = series.every((s) => s.values.every((v) => !v));
-  const drill = (i, seriesKey) => drillFilter(cfg, ctx, months, outKeys[i], seriesKey);
+  const drill = (i, seriesKey) => drillFilter(cfg, ctx, months, outKeys[i], seriesKey, data, typeOf, otherOf);
   return { labels, series, reference, empty, months, drill };
 }
 
@@ -207,11 +211,13 @@ export function buildSeries(data, cfg, ctx) {
  * { from, to, categories?, payer?, q? }. Columns that mix things it cannot filter
  * (e.g. Πάγιο/Επιπλέον, "Άλλα") fall back to the chart's own categories and dates.
  */
-function drillFilter(cfg, ctx, months, key, seriesKey) {
+function drillFilter(cfg, ctx, months, key, seriesKey, data, typeOf, otherOf = {}) {
   const out = { from: `${months[0]}-01`, to: lastDay(months[months.length - 1]), categories: cfg.categories && cfg.categories.length ? [...cfg.categories] : [], payer: ctx.payer || '', q: '' };
   const apply = (dim, k) => {
+    if (k === OTHER && dim === 'category' && otherOf.category) { out.categories = otherOf.category; return; }
     if (k === undefined || k === null || k === '__all' || k === OTHER) return;
-    if (dim === 'category') out.categories = [k];
+    if (dim === 'type') typeKey = k;
+    else if (dim === 'category') out.categories = [k];
     else if (dim === 'payer' && k !== '—') out.payer = k;
     else if (dim === 'day') { out.from = k; out.to = k; }
     else if (dim === 'month') { out.from = `${k}-01`; out.to = lastDay(k); }
@@ -220,8 +226,17 @@ function drillFilter(cfg, ctx, months, key, seriesKey) {
       if (inside.length) { out.from = `${inside[0]}-01`; out.to = lastDay(inside[inside.length - 1]); }
     }
   };
+  let typeKey = null;
   apply(cfg.groupBy, key);
   if (cfg.kind !== 'doughnut' && cfg.splitBy && cfg.splitBy !== 'none') apply(cfg.splitBy, seriesKey);
+  if (typeKey) {
+    // Πάγιο / Επιπλέον is set per month and category: keep the categories of that type in those months.
+    const inRange = monthRange(out.from.slice(0, 7), out.to.slice(0, 7));
+    const all = [...new Set(data.categories.concat(data.entries.map((e) => e.category)))];
+    const ofType = all.filter((c) => inRange.some((m) => typeOf(m, c) === typeKey));
+    out.categories = out.categories.length ? out.categories.filter((c) => ofType.includes(c)) : ofType;
+    if (!out.categories.length) out.categories = ['—'];
+  }
   return out;
 }
 
@@ -365,17 +380,41 @@ export function drawChart(canvas, cfg, built, data, onPick) {
   if (onPick) {
     // Tap a column, slice or segment to see its payments. Plan/limit marks are not payments.
     const hit = (chart, evt) => {
-      const exact = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false)
-        .filter((el) => el.datasetIndex < built.series.length);
-      if (exact.length) return exact[0];
+      const n = built.series.length;
+      const exact = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+      const own = exact.find((el) => el.datasetIndex < n);
+      if (own) return own;
       if (cfg.kind === 'doughnut') return null;
-      const col = chart.getElementsAtEventForMode(evt, 'index', { intersect: false, axis: horizontal ? 'y' : 'x' }, false)
-        .filter((el) => el.datasetIndex < built.series.length);
-      return col.length ? { index: col[0].index, datasetIndex: built.series.length > 1 ? -1 : 0 } : null;
+      if (cfg.kind === 'bar') {
+        const col = chart.getElementsAtEventForMode(evt, 'index', { intersect: false, axis: horizontal ? 'y' : 'x' }, false)
+          .filter((el) => el.datasetIndex < n && built.series[el.datasetIndex].values[el.index] > 0);
+        if (!col.length) return null;
+        // Only on the column's own width, not the empty space beside it.
+        const c0 = col[0].element;
+        const across = horizontal ? Math.abs(evt.y - c0.y) - c0.height / 2 : Math.abs(evt.x - c0.x) - c0.width / 2;
+        if (across > 8) return null;
+        // One colour per column: anywhere in the column's row opens it (thin bars are hard to hit).
+        if (n === 1) return col[0];
+        // Several colours: the piece nearest to the tap, but only on the column itself, not the empty space above it.
+        const pos = horizontal ? evt.x : evt.y;
+        const span = ({ element: b }) => [Math.min(b.base, horizontal ? b.x : b.y), Math.max(b.base, horizontal ? b.x : b.y)];
+        const lo = Math.min(...col.map((el) => span(el)[0])) - 6;
+        const hi = Math.max(...col.map((el) => span(el)[1])) + 6;
+        if (pos < lo || pos > hi) return null;
+        const gap = (el) => { const [a, b] = span(el); return pos < a ? a - pos : pos > b ? pos - b : 0; };
+        return col.reduce((best, el) => (gap(el) < gap(best) ? el : best));
+      }
+      // Lines are thin: take the closest point of the closest line.
+      const near = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: false, axis: n > 1 ? 'xy' : 'x' }, false)
+        .filter((el) => el.datasetIndex < n);
+      return near.length ? near[0] : null;
     };
+    // Nothing paid there (a plan with no payments, or a future day): nothing to open.
+    const paidAt = (el) => (el.datasetIndex >= 0 && built.series[el.datasetIndex] ? [built.series[el.datasetIndex]] : built.series)
+      .some((s) => s.values[el.index] > 0);
     options.onClick = (evt, _els, chart) => {
       const el = hit(chart, evt);
-      if (!el) return;
+      if (!el || !paidAt(el)) return;
       const s = built.series[el.datasetIndex];
       const filter = built.drill(el.index, s ? s.key : undefined);
       // Run after Chart.js has finished with this click: opening the list destroys the chart.
@@ -383,7 +422,8 @@ export function drawChart(canvas, cfg, built, data, onPick) {
       setTimeout(() => onPick(filter, label));
     };
     options.onHover = (evt, _els, chart) => {
-      chart.canvas.style.cursor = hit(chart, evt) ? 'pointer' : 'default';
+      const el = hit(chart, evt);
+      chart.canvas.style.cursor = el && paidAt(el) ? 'pointer' : 'default';
     };
   }
   if (cfg.kind === 'doughnut') {

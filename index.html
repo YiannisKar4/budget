@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#2a78d6">
   <title>Οικογενειακά έξοδα</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M9 22V14M16 22V9M23 22v-5' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <script src="js/vendor/chart-4.4.1.umd.js" defer></script>
-  <script type="module" src="js/app.js?v=8"></script>
+  <script type="module" src="js/app.js?v=9"></script>
 </head>
 <body>
   <header class="topbar">
@@ -172,6 +172,19 @@
       </form>
       <div class="err" id="manage-err" hidden></div>
     </div>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog id="ask-dlg" class="ask" aria-labelledby="ask-title">
+    <form method="dialog" class="ask-body">
+      <h2 id="ask-title"></h2>
+      <p id="ask-text"></p>
+      <input class="field" id="ask-value" readonly hidden aria-label="Link">
+      <div class="ask-actions">
+        <button class="btn" value="cancel" id="ask-cancel">Άκυρο</button>
+        <button class="btn primary" value="ok" id="ask-ok">OK</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" hidden></div>

@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=8';
-import * as supa from './supa.js?v=8';
-import { STORAGE_PREFIX } from './config.js?v=8';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=8';
-import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=8';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=9';
+import * as supa from './supa.js?v=9';
+import { STORAGE_PREFIX } from './config.js?v=9';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=9';
+import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=9';
 
 /* ------------------------------------------------------------------ state */
 
@@ -536,7 +536,14 @@ async function saveEntry(ev) {
 
 async function deleteEntry() {
   const e = state.editingEntry;
-  if (!e || !confirm(`Διαγραφή της πληρωμής ${euro(e.amount)} (${e.category});`)) return;
+  if (!e) return;
+  const sure = await ask({
+    title: 'Διαγραφή πληρωμής;',
+    text: `${euro(e.amount)} · ${e.category}${e.description ? ` · ${e.description}` : ''} (${e.date.split('-').reverse().join('/')})`,
+    ok: 'Διαγραφή',
+    danger: true,
+  });
+  if (!sure) return;
   const btn = $('#entry-delete');
   btn.disabled = true;
   try {
@@ -591,8 +598,8 @@ function renderCharts() {
     <div class="chart-grid" id="chart-grid"></div>`;
   $('#cf-payer').addEventListener('change', (e) => { state.chartPayer = e.target.value; renderAll(); });
   $('#chart-add').addEventListener('click', () => openChart(null));
-  $('#chart-reset').addEventListener('click', () => {
-    if (!confirm('Επαναφορά των αρχικών γραφημάτων;')) return;
+  $('#chart-reset').addEventListener('click', async () => {
+    if (!(await ask({ title: 'Επαναφορά γραφημάτων;', text: 'Τα γραφήματα σε αυτή τη συσκευή γυρίζουν στα αρχικά. Οι αλλαγές σου σε αυτά χάνονται.', ok: 'Επαναφορά' }))) return;
     state.charts = structuredClone(DEFAULT_CHARTS);
     saveCharts();
     renderAll();
@@ -755,7 +762,7 @@ function renderPlans() {
       <button class="btn danger" type="button" id="delete-month">Διαγραφή του μήνα</button>
     </div>` : ''}`;
   $('#delete-month')?.addEventListener('click', async (ev) => {
-    if (!confirm(`Διαγραφή του ταβανιού και των πλάνων του ${monthLong(m)};`)) return;
+    if (!(await ask({ title: `Διαγραφή του ${monthLong(m)};`, text: 'Σβήνονται το ταβάνι και τα πλάνα του μήνα. Μπορείς να τον ξαναδημιουργήσεις αργότερα από τον προηγούμενο.', ok: 'Διαγραφή', danger: true }))) return;
     ev.target.disabled = true;
     try {
       await call(state.settings, 'deleteMonth', { month: m });
@@ -819,6 +826,30 @@ function renderPlans() {
       btn.textContent = 'Αποθήκευση αλλαγών';
     }
   });
+}
+
+/* ------------------------------------------------------------ ask dialog */
+
+/**
+ * The site's own confirmation window (instead of the browser's confirm/prompt).
+ * Resolves true when the person presses the main button.
+ */
+function ask({ title, text = '', ok = 'OK', danger = false, cancel = true, value = null }) {
+  const dlg = $('#ask-dlg');
+  $('#ask-title').textContent = title;
+  $('#ask-text').textContent = text;
+  $('#ask-text').hidden = !text;
+  const field = $('#ask-value');
+  field.hidden = value === null;
+  field.value = value ?? '';
+  const okBtn = $('#ask-ok');
+  okBtn.textContent = ok;
+  okBtn.classList.toggle('danger-fill', danger);
+  $('#ask-cancel').hidden = !cancel;
+  dlg.returnValue = '';
+  dlg.showModal();
+  if (value !== null) { field.focus(); field.select(); } else okBtn.focus();
+  return new Promise((resolve) => dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true }));
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -997,8 +1028,8 @@ function initManage() {
       case 'payer-up': return manageCall('orderPayers', { names: moved(payers, i, -1) });
       case 'payer-down': return manageCall('orderPayers', { names: moved(payers, i, 1) });
       case 'payer-delete':
-        if (!confirm(`Διαγραφή του «${payers[i]}»;`)) return;
-        return manageCall('deletePayer', { payer: payers[i] }, `Το «${payers[i]}» διαγράφηκε`);
+        return ask({ title: `Διαγραφή του «${payers[i]}»;`, text: 'Θα φύγει από το «Ποιος πλήρωσε».', ok: 'Διαγραφή', danger: true })
+          .then((sure) => sure && manageCall('deletePayer', { payer: payers[i] }, `Το «${payers[i]}» διαγράφηκε`));
     }
   });
   // Renaming: type over the name, then leave the field or press Enter.
@@ -1122,7 +1153,7 @@ function init() {
       await navigator.clipboard.writeText(connectLink());
       toast('Το link αντιγράφηκε');
     } catch {
-      prompt('Αντίγραψε το link:', connectLink());
+      ask({ title: 'Αντίγραψε το link', text: 'Πάτα παρατεταμένα στο link και διάλεξε Αντιγραφή.', value: connectLink(), ok: 'Κλείσιμο', cancel: false });
     }
   });
   $('#share-send').addEventListener('click', () =>
@@ -1150,8 +1181,9 @@ function init() {
   });
 
   $('#chart-form').addEventListener('submit', saveChart);
-  $('#chart-delete').addEventListener('click', () => {
-    if (!state.editingChart || !confirm('Διαγραφή αυτού του γραφήματος;')) return;
+  $('#chart-delete').addEventListener('click', async () => {
+    if (!state.editingChart) return;
+    if (!(await ask({ title: 'Διαγραφή γραφήματος;', text: `«${state.editingChart.title}» θα φύγει από αυτή τη συσκευή.`, ok: 'Διαγραφή', danger: true }))) return;
     state.charts = state.charts.filter((c) => c !== state.editingChart);
     saveCharts();
     $('#chart-dlg').close();
@@ -1178,8 +1210,16 @@ function init() {
     applyTheme();
     renderAll();
   });
-  $('#logout').addEventListener('click', () => {
-    if (!confirm('Να αφαιρεθούν η σύνδεση και τα αποθηκευμένα δεδομένα από αυτή τη συσκευή;')) return;
+  $('#logout').addEventListener('click', async () => {
+    const sure = await ask({
+      title: 'Αποσύνδεση;',
+      text: usesSupabase()
+        ? 'Αυτή η συσκευή θα αποσυνδεθεί. Τα δεδομένα μένουν στη βάση· για να ξαναμπείς θα ζητήσεις νέο link με το email σου.'
+        : 'Θα σβηστούν από αυτή τη συσκευή η σύνδεση με το Google Sheet και τα αποθηκευμένα δεδομένα.',
+      ok: 'Αποσύνδεση',
+      danger: true,
+    });
+    if (!sure) return;
     const theme = state.settings.theme;
     state.settings = { theme };
     saveSettings(state.settings);

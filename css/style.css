@@ -416,3 +416,14 @@ dialog { overflow-y: auto; overscroll-behavior: contain; }
   .manage-add:not(.payer) button { grid-column: 1 / -1; }
 }
 #manage-body.busy { opacity: 0.6; pointer-events: none; }
+
+/* ---------- confirmation window ---------- */
+dialog.ask { width: min(400px, calc(100vw - 32px)); border-radius: 18px; border: 1px solid var(--border); }
+@media (max-width: 560px) { dialog.ask { width: calc(100vw - 32px); margin: auto; border-radius: 18px; } }
+.ask-body { padding: 20px 20px 16px; }
+.ask-body h2 { font-size: 18px; margin: 0 0 8px; }
+.ask-body p { margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.45; }
+.ask-body .field { margin-top: 12px; font-size: 14px; }
+.ask-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.ask-actions .btn { min-width: 96px; }
+.btn.primary.danger-fill { background: var(--critical); color: #fff; }

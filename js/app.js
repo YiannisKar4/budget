@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=12';
-import * as supa from './supa.js?v=12';
-import { STORAGE_PREFIX } from './config.js?v=12';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=12';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=12';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=13';
+import * as supa from './supa.js?v=13';
+import { STORAGE_PREFIX } from './config.js?v=13';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=13';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=13';
 
 /* ------------------------------------------------------------------ state */
 
@@ -678,6 +678,28 @@ function chartSubtitle(cfg) {
   return `${period}${cats}${state.chartPayer ? ` · ${state.chartPayer}` : ''}`;
 }
 
+// "of that month", "for that month"… per grouping, for the hint under each chart.
+const HINT_OF = { category: 'εκείνης της κατηγορίας', payer: 'εκείνου του προσώπου', type: 'εκείνου του είδους (πάγια ή επιπλέον)', day: 'εκείνης της μέρας', month: 'εκείνου του μήνα', quarter: 'εκείνου του τριμήνου', half: 'εκείνου του εξαμήνου', year: 'εκείνης της χρονιάς' };
+const HINT_FOR = { category: 'σε εκείνη την κατηγορία', payer: 'από εκείνο το πρόσωπο', type: 'σε εκείνο το είδος', day: 'εκείνη τη μέρα', month: 'εκείνον τον μήνα', quarter: 'εκείνο το τρίμηνο', half: 'εκείνο το εξάμηνο', year: 'εκείνη τη χρονιά' };
+const HINT_SPLIT = { category: ['μια κατηγορία', 'αυτής της κατηγορίας'], payer: ['ένα πρόσωπο', 'αυτού του προσώπου'], type: ['ένα είδος (πάγια ή επιπλέον)', 'αυτού του είδους'] };
+
+/** One line under a chart that says what to tap and what it opens. */
+function chartHint(cfg, built, table = false) {
+  const g = cfg.groupBy;
+  const split = built.series.length > 1 ? HINT_SPLIT[cfg.splitBy] : null;
+  if (table) return `Πάτα σε μια γραμμή του πίνακα για να δεις τις πληρωμές ${HINT_OF[g]}.`;
+  if (cfg.kind === 'doughnut') return `Πάτα σε ένα κομμάτι για να δεις τις πληρωμές ${HINT_OF[g]}.`;
+  if (cfg.kind === 'line') {
+    // A running total: say the list has only that day's (or month's) payments, not everything up to it.
+    const only = cfg.cumulative && TIME_GROUPS.has(g) ? 'μόνο ' : '';
+    if (split) return `Κάθε γραμμή είναι ${split[0]}. Πάτα σε ένα σημείο της για να δεις ${only}τις πληρωμές ${split[1]} ${HINT_FOR[g]}.`;
+    return `Πάτα σε ένα σημείο της γραμμής για να δεις ${only}τις πληρωμές ${HINT_OF[g]}.`;
+  }
+  const bar = g === 'category' ? 'μπάρας' : 'στήλης';
+  if (split) return `Κάθε χρώμα είναι ${split[0]}. Πάτα σε ένα χρώμα μιας ${bar} για να δεις τις πληρωμές ${split[1]} ${HINT_FOR[g]}.`;
+  return `Πάτα σε μια ${g === 'category' ? 'μπάρα' : 'στήλη'} για να δεις τις πληρωμές ${HINT_OF[g]}.`;
+}
+
 function tableHtml(built) {
   const cols = built.series.map((s) => s.label);
   if (built.reference) cols.push(built.reference.label);
@@ -731,20 +753,22 @@ function renderCharts() {
     const title = cfg.title || GROUPS[cfg.groupBy];
     if (!built) {
       const tiles = buildTiles(d, cfg, ctx);
-      body.innerHTML = tiles.length ? tilesHtml(tiles) : '<div class="chart-empty">Δεν υπάρχουν πληρωμές αυτόν τον μήνα.</div>';
+      body.innerHTML = tiles.length
+        ? `${tilesHtml(tiles)}<p class="chart-hint">Πάτα σε μια κάρτα για να δεις τις πληρωμές της κατηγορίας αυτόν τον μήνα.</p>`
+        : '<div class="chart-empty">Δεν υπάρχουν πληρωμές αυτόν τον μήνα.</div>';
       body.querySelectorAll('.tile-link').forEach((el) =>
         el.addEventListener('click', () => drillTo(tiles[Number(el.dataset.i)].drill, `${title} · ${tiles[Number(el.dataset.i)].category} · ${monthLong(state.month)}`)),
       );
     } else if (built.empty) {
       body.innerHTML = '<div class="chart-empty">Δεν υπάρχουν πληρωμές για αυτή την περίοδο.</div>';
     } else if (cfg.showTable || !window.Chart) {
-      body.innerHTML = tableHtml(built) + (window.Chart ? '' : '<p class="small muted">Τα γραφήματα δεν φορτώθηκαν. Εμφανίζεται πίνακας.</p>');
+      body.innerHTML = tableHtml(built) + `<p class="chart-hint">${chartHint(cfg, built, true)}</p>` + (window.Chart ? '' : '<p class="small muted">Τα γραφήματα δεν φορτώθηκαν. Εμφανίζεται πίνακας.</p>');
       body.querySelectorAll('tr[data-i]').forEach((tr) =>
         tr.addEventListener('click', () => drillTo(built.drill(Number(tr.dataset.i)), `${title} · ${built.labels[Number(tr.dataset.i)]}`)),
       );
     } else {
       body.innerHTML = `<div class="chart-box" style="height:${chartHeight(cfg, built)}px"><canvas role="img" aria-label="${esc(cfg.title)}"></canvas></div>
-        <p class="chart-hint">Πάτα σε ${cfg.kind === 'doughnut' ? 'ένα κομμάτι' : 'μια στήλη'} για να δεις τις πληρωμές.</p>`;
+        <p class="chart-hint">${chartHint(cfg, built)}</p>`;
       state.chartInstances.push(drawChart($('canvas', body), cfg, built, d, (filter, label) => drillTo(filter, `${title} · ${label}`)));
     }
     card.querySelectorAll('[data-act]').forEach((b) =>

@@ -1,8 +1,8 @@
 // Talks to the database: Supabase when js/config.js has a project, otherwise the
 // Google Apps Script web app attached to the sheet. Both answer with the same JSON.
 // Apps Script requests are sent as text/plain so the browser does not need a CORS preflight.
-import * as supa from './supa.js?v=12';
-import { STORAGE_PREFIX } from './config.js?v=12';
+import * as supa from './supa.js?v=13';
+import { STORAGE_PREFIX } from './config.js?v=13';
 
 const SETTINGS_KEY = `${STORAGE_PREFIX}.settings`;
 

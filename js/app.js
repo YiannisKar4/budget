@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=7';
-import * as supa from './supa.js?v=7';
-import { STORAGE_PREFIX } from './config.js?v=7';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=7';
-import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=7';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=8';
+import * as supa from './supa.js?v=8';
+import { STORAGE_PREFIX } from './config.js?v=8';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS } from './calc.js?v=8';
+import { buildSeries, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=8';
 
 /* ------------------------------------------------------------------ state */
 
@@ -108,6 +108,7 @@ async function fetchData({ quiet = false } = {}) {
       months: body.months,
       plans: body.plans,
       categories: body.categories,
+      categoryInfo: body.categoryInfo,
       payers: body.payers,
       updatedAt: body.updatedAt,
     };
@@ -746,7 +747,27 @@ function renderPlans() {
         <div class="err" id="plans-err" hidden></div>
         <div class="row-actions"><button class="btn primary" type="submit" id="plans-save" disabled>Αποθήκευση αλλαγών</button></div>
       </div>
-    </form>`;
+    </form>
+    ${usesSupabase() && !d.entries.some((e) => monthOf(e.date) === m) ? `
+    <div class="card">
+      <p class="small muted">Ο ${monthLong(m)} δεν έχει πληρωμές, οπότε μπορεί να διαγραφεί αν δημιουργήθηκε κατά λάθος.</p>
+      <div class="err" id="delete-month-err" hidden></div>
+      <button class="btn danger" type="button" id="delete-month">Διαγραφή του μήνα</button>
+    </div>` : ''}`;
+  $('#delete-month')?.addEventListener('click', async (ev) => {
+    if (!confirm(`Διαγραφή του ταβανιού και των πλάνων του ${monthLong(m)};`)) return;
+    ev.target.disabled = true;
+    try {
+      await call(state.settings, 'deleteMonth', { month: m });
+      toast(`Ο ${monthLong(m)} διαγράφηκε`);
+      await fetchData();
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      $('#delete-month-err').textContent = e.message;
+      $('#delete-month-err').hidden = false;
+      ev.target.disabled = false;
+    }
+  });
 
   const form = $('#plans-form');
   const original = s.rows.map((r) => ({ type: r.type, plan: r.plan }));
@@ -875,12 +896,184 @@ function openSettings() {
   $('#logout').hidden = !configured();
   $('#share-section').hidden = !configured();
   $('#share-box').hidden = true;
+  $('#manage-section').hidden = !(usesSupabase() && state.data);
+  $('#export-section').hidden = !state.data;
   $('#share-note').textContent = usesSupabase()
     ? 'Σκάναρε με την κάμερα του άλλου κινητού, ή στείλε το link. Ανοίγει τη σελίδα, και εκεί συνδέεσαι με το δικό σου email.'
     : 'Σκάναρε με την κάμερα του άλλου κινητού, ή στείλε το link. Το link περιέχει το κλειδί, οπότε στείλ\' το μόνο σε δικά σας άτομα.';
   $('#logout').textContent = usesSupabase() ? 'Αποσύνδεση' : 'Αποσύνδεση από αυτή τη συσκευή';
   applyTheme();
   $('#settings-dlg').showModal();
+}
+
+/* -------- categories and people (Supabase) -------- */
+
+const MICON = {
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>',
+  hide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5.06-5.94M9.9 4.24A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.16 3.19M1 1l22 22"/></svg>',
+  show: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+};
+
+function categoryInfo() {
+  return state.data.categoryInfo || state.data.categories.map((name) => ({ name, hidden: false }));
+}
+
+function renderManage() {
+  const cats = categoryInfo();
+  const iconBtn = (act, i, icon, label, disabled = false) =>
+    `<button type="button" class="icon-btn" data-act="${act}" data-i="${i}" aria-label="${label}" title="${label}" ${disabled ? 'disabled' : ''}>${icon}</button>`;
+  $('#cat-list').innerHTML = cats
+    .map((c, i) => `
+      <div class="manage-row${c.hidden ? ' hidden-cat' : ''}">
+        <input class="field" data-kind="cat" data-i="${i}" value="${esc(c.name)}" aria-label="Όνομα κατηγορίας" autocomplete="off">
+        ${iconBtn('cat-up', i, MICON.up, 'Πάνω', i === 0)}
+        ${iconBtn('cat-down', i, MICON.down, 'Κάτω', i === cats.length - 1)}
+        ${c.hidden ? iconBtn('cat-show', i, MICON.show, 'Εμφάνιση') : iconBtn('cat-hide', i, MICON.hide, 'Απόκρυψη')}
+      </div>`)
+    .join('');
+  const payers = state.data.payers;
+  $('#payer-list').innerHTML = payers
+    .map((p, i) => `
+      <div class="manage-row">
+        <input class="field" data-kind="payer" data-i="${i}" value="${esc(p)}" aria-label="Όνομα" autocomplete="off">
+        ${iconBtn('payer-up', i, MICON.up, 'Πάνω', i === 0)}
+        ${iconBtn('payer-down', i, MICON.down, 'Κάτω', i === payers.length - 1)}
+        ${iconBtn('payer-delete', i, MICON.trash, 'Διαγραφή')}
+      </div>`)
+    .join('');
+}
+
+/** Runs one change, then reloads the data and redraws the list. Returns true if it worked. */
+async function manageCall(action, payload, done) {
+  const body = $('#manage-body');
+  const err = $('#manage-err');
+  err.hidden = true;
+  body.classList.add('busy');
+  try {
+    await call(state.settings, action, payload);
+    await fetchData({ quiet: true });
+    if (done) toast(done);
+    return true;
+  } catch (e) {
+    if (handleAuthError(e)) return false;
+    err.textContent = e.message;
+    err.hidden = false;
+    return false;
+  } finally {
+    body.classList.remove('busy');
+    if (state.data) renderManage();
+  }
+}
+
+const moved = (list, i, by) => {
+  const out = [...list];
+  [out[i], out[i + by]] = [out[i + by], out[i]];
+  return out;
+};
+
+function openManage() {
+  $('#manage-err').hidden = true;
+  renderManage();
+  $('#settings-dlg').close();
+  $('#manage-dlg').showModal();
+}
+
+function initManage() {
+  $('#open-manage').addEventListener('click', openManage);
+  $('#manage-body').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const i = Number(b.dataset.i);
+    const cats = categoryInfo();
+    const names = cats.map((c) => c.name);
+    const payers = state.data.payers;
+    switch (b.dataset.act) {
+      case 'cat-up': return manageCall('orderCategories', { names: moved(names, i, -1) });
+      case 'cat-down': return manageCall('orderCategories', { names: moved(names, i, 1) });
+      case 'cat-hide': return manageCall('updateCategory', { category: names[i], hidden: true }, `Η «${names[i]}» κρύφτηκε`);
+      case 'cat-show': return manageCall('updateCategory', { category: names[i], hidden: false }, `Η «${names[i]}» εμφανίζεται ξανά`);
+      case 'payer-up': return manageCall('orderPayers', { names: moved(payers, i, -1) });
+      case 'payer-down': return manageCall('orderPayers', { names: moved(payers, i, 1) });
+      case 'payer-delete':
+        if (!confirm(`Διαγραφή του «${payers[i]}»;`)) return;
+        return manageCall('deletePayer', { payer: payers[i] }, `Το «${payers[i]}» διαγράφηκε`);
+    }
+  });
+  // Renaming: type over the name, then leave the field or press Enter.
+  $('#manage-body').addEventListener('change', (e) => {
+    const input = e.target.closest('input[data-kind]');
+    if (!input) return;
+    const i = Number(input.dataset.i);
+    const value = input.value.trim();
+    if (input.dataset.kind === 'cat') {
+      const old = categoryInfo()[i].name;
+      if (value === old) return;
+      manageCall('updateCategory', { category: old, newName: value }, `Μετονομάστηκε σε «${value}»`);
+    } else {
+      const old = state.data.payers[i];
+      if (value === old) return;
+      manageCall('renamePayer', { payer: old, newName: value }, `Μετονομάστηκε σε «${value}»`);
+    }
+  });
+  $('#manage-body').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('input[data-kind]')) { e.preventDefault(); e.target.blur(); }
+  });
+  $('#cat-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('#cat-new-name').value.trim();
+    const raw = $('#cat-new-plan').value.trim();
+    const plan = raw === '' ? null : parseAmount(raw);
+    if (!name) return showManageError('Γράψε όνομα κατηγορίας.');
+    if (plan !== null && (!isFinite(plan) || plan < 0)) return showManageError('Μη έγκυρο ποσό πλάνου.');
+    const ok = await manageCall('addCategory', { category: name, type: $('#cat-new-type').value, plan }, `Προστέθηκε η «${name}»`);
+    if (ok) { $('#cat-new-name').value = ''; $('#cat-new-plan').value = ''; }
+  });
+  $('#payer-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('#payer-new-name').value.trim();
+    if (!name) return showManageError('Γράψε όνομα.');
+    const ok = await manageCall('addPayer', { payer: name }, `Προστέθηκε το «${name}»`);
+    if (ok) $('#payer-new-name').value = '';
+  });
+}
+
+function showManageError(msg) {
+  $('#manage-err').textContent = msg;
+  $('#manage-err').hidden = false;
+}
+
+/* -------- export -------- */
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+// Greek Excel expects ";" between columns and a decimal comma; the BOM makes it read UTF-8.
+function exportCsv() {
+  const cell = (v) => {
+    const t = String(v ?? '');
+    return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const rows = [['Ημερομηνία', 'Κατηγορία', 'Περιγραφή', 'Ποσό', 'Ποιος πλήρωσε', 'Σχόλια']];
+  for (const e of [...state.data.entries].sort((a, b) => a.date.localeCompare(b.date))) {
+    rows.push([e.date, e.category, e.description, String(e.amount).replace('.', ','), e.payer, e.comments]);
+  }
+  download(`plirwmes-${today()}.csv`, '\ufeff' + rows.map((r) => r.map(cell).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+}
+
+function exportJson() {
+  const { entries, months, plans, categories, categoryInfo: info, payers } = state.data;
+  const backup = { exportedAt: new Date().toISOString(), entries, months, plans, categories, categoryInfo: info, payers };
+  download(`budget-backup-${today()}.json`, JSON.stringify(backup, null, 2), 'application/json');
 }
 
 /* ------------------------------------------------------------------ routing */
@@ -921,6 +1114,9 @@ function init() {
     go_(location.hash.slice(1));
   });
   $('#share-connect').addEventListener('click', showShare);
+  initManage();
+  $('#export-csv').addEventListener('click', exportCsv);
+  $('#export-json').addEventListener('click', exportJson);
   $('#share-copy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(connectLink());

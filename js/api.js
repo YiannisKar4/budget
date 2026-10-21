@@ -1,8 +1,8 @@
 // Talks to the database: Supabase when js/config.js has a project, otherwise the
 // Google Apps Script web app attached to the sheet. Both answer with the same JSON.
 // Apps Script requests are sent as text/plain so the browser does not need a CORS preflight.
-import * as supa from './supa.js?v=7';
-import { STORAGE_PREFIX } from './config.js?v=7';
+import * as supa from './supa.js?v=8';
+import { STORAGE_PREFIX } from './config.js?v=8';
 
 const SETTINGS_KEY = `${STORAGE_PREFIX}.settings`;
 
@@ -39,6 +39,14 @@ const RPC = {
   delete: ['api_delete', (p) => ({ id: p.id })],
   setMonth: ['api_set_month', (p) => ({ month: p.month, cap: p.cap, warn: p.warn, forward: !!p.forward })],
   addMonth: ['api_add_month', (p) => ({ month: p.month })],
+  deleteMonth: ['api_delete_month', (p) => ({ month: p.month })],
+  addCategory: ['api_add_category', (p) => ({ category: p.category, type: p.type, plan: p.plan ?? null })],
+  updateCategory: ['api_update_category', (p) => ({ category: p.category, new_name: p.newName ?? null, hidden: p.hidden ?? null })],
+  orderCategories: ['api_order_categories', (p) => ({ names: p.names })],
+  addPayer: ['api_add_payer', (p) => ({ payer: p.payer })],
+  renamePayer: ['api_rename_payer', (p) => ({ payer: p.payer, new_name: p.newName })],
+  deletePayer: ['api_delete_payer', (p) => ({ payer: p.payer })],
+  orderPayers: ['api_order_payers', (p) => ({ names: p.names })],
   setPlan: ['api_set_plan', (p) => ({ month: p.month, category: p.category, type: p.type, plan: p.plan ?? null, forward: !!p.forward })],
 };
 

@@ -174,6 +174,10 @@ begin
     'categories', coalesce((
       select json_agg(name order by sort_order, id) from categories
       where household_id = h and not archived), '[]'),
+    'categoryInfo', coalesce((
+      select json_agg(json_build_object('name', name, 'type', case default_type when 'fixed' then 'Πάγιο' else 'Επιπλέον' end,
+                                        'hidden', archived) order by sort_order, id)
+      from categories where household_id = h), '[]'),
     'payers', coalesce((
       select json_agg(name order by sort_order, id) from payers where household_id = h), '[]'),
     'updatedAt', now()
@@ -287,6 +291,118 @@ begin
   return json_build_object('ok', true, 'changed', n);
 end $$;
 
+-- --------------------------------------------------- categories, people, months
+
+-- A new category, with the same plan in every month already set up (plan null = unknown).
+create or replace function api_add_category(category text, type text, plan numeric default null) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); n text := btrim(coalesce(category, '')); t expense_type := _type(type); cat smallint;
+begin
+  if n = '' then raise exception 'Γράψε όνομα κατηγορίας.'; end if;
+  if plan < 0 then raise exception 'Μη έγκυρο ποσό.'; end if;
+  if exists (select 1 from categories c where c.household_id = h and lower(c.name) = lower(n)) then
+    raise exception 'Η κατηγορία «%» υπάρχει ήδη.', n;
+  end if;
+  insert into categories (household_id, name, default_type, sort_order)
+  select h, n, t, coalesce(max(c.sort_order) + 1, 0) from categories c where c.household_id = h
+  returning id into cat;
+  insert into category_plans (household_id, month, category_id, type, planned)
+  select h, ml.month, cat, t, plan from month_limits ml where ml.household_id = h;
+  return json_build_object('ok', true);
+end $$;
+
+-- Rename a category and/or hide it (hidden categories leave the list for new payments and new months;
+-- their past payments and plans stay).
+create or replace function api_update_category(category text, new_name text default null, hidden boolean default null)
+returns json language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); n text := btrim(coalesce(new_name, '')); cat smallint;
+begin
+  select c.id into cat from categories c where c.household_id = h and c.name = category;
+  if cat is null then raise exception 'Άγνωστη κατηγορία: %', category; end if;
+  if new_name is not null then
+    if n = '' then raise exception 'Γράψε όνομα κατηγορίας.'; end if;
+    if exists (select 1 from categories c where c.household_id = h and lower(c.name) = lower(n) and c.id <> cat) then
+      raise exception 'Η κατηγορία «%» υπάρχει ήδη.', n;
+    end if;
+    update categories c set name = n where c.id = cat;
+  end if;
+  if hidden is not null then update categories c set archived = hidden where c.id = cat; end if;
+  return json_build_object('ok', true);
+end $$;
+
+-- Display order: the names in the order they should appear.
+create or replace function api_order_categories(names text[]) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household();
+begin
+  update categories c set sort_order = array_position(names, c.name) - 1
+  where c.household_id = h and c.name = any(names);
+  return json_build_object('ok', true);
+end $$;
+
+create or replace function api_add_payer(payer text) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); n text := btrim(coalesce(payer, ''));
+begin
+  if n = '' then raise exception 'Γράψε όνομα.'; end if;
+  if exists (select 1 from payers y where y.household_id = h and lower(y.name) = lower(n)) then
+    raise exception 'Το «%» υπάρχει ήδη.', n;
+  end if;
+  insert into payers (household_id, name, sort_order)
+  select h, n, coalesce(max(y.sort_order) + 1, 0) from payers y where y.household_id = h;
+  return json_build_object('ok', true);
+end $$;
+
+create or replace function api_rename_payer(payer text, new_name text) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); n text := btrim(coalesce(new_name, '')); pid smallint;
+begin
+  select y.id into pid from payers y where y.household_id = h and y.name = payer;
+  if pid is null then raise exception 'Άγνωστο πρόσωπο: %', payer; end if;
+  if n = '' then raise exception 'Γράψε όνομα.'; end if;
+  if exists (select 1 from payers y where y.household_id = h and lower(y.name) = lower(n) and y.id <> pid) then
+    raise exception 'Το «%» υπάρχει ήδη.', n;
+  end if;
+  update payers y set name = n where y.id = pid;
+  return json_build_object('ok', true);
+end $$;
+
+-- Only someone with no payments can be removed; otherwise rename them.
+create or replace function api_delete_payer(payer text) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); pid smallint;
+begin
+  select y.id into pid from payers y where y.household_id = h and y.name = payer;
+  if pid is null then raise exception 'Άγνωστο πρόσωπο: %', payer; end if;
+  if exists (select 1 from payments p where p.payer_id = pid) then
+    raise exception 'Το «%» έχει πληρωμές και δεν διαγράφεται. Μπορείς να το μετονομάσεις.', payer;
+  end if;
+  delete from payers y where y.id = pid;
+  return json_build_object('ok', true);
+end $$;
+
+create or replace function api_order_payers(names text[]) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household();
+begin
+  update payers y set sort_order = array_position(names, y.name) - 1
+  where y.household_id = h and y.name = any(names);
+  return json_build_object('ok', true);
+end $$;
+
+-- Removes a month's limit and plans. Refused while the month has payments.
+create or replace function api_delete_month(month text) returns json
+language plpgsql set search_path = public as $$
+declare h uuid := _require_household(); m date := _month(month);
+begin
+  if exists (select 1 from payments p where p.household_id = h and p.paid_on >= m and p.paid_on < m + interval '1 month') then
+    raise exception 'Ο μήνας έχει πληρωμές και δεν διαγράφεται.';
+  end if;
+  delete from category_plans cp where cp.household_id = h and cp.month = m;
+  delete from month_limits ml where ml.household_id = h and ml.month = m;
+  return json_build_object('ok', true);
+end $$;
+
 -- "Έλεγχος μήνα" as a view, for looking at the data straight from the SQL editor.
 create or replace view month_category_summary with (security_invoker = true) as
 select cp.household_id, cp.month, c.name as category, cp.type, cp.planned,
@@ -310,3 +426,6 @@ revoke all on function api_read(), api_add(jsonb), api_update(uuid, jsonb), api_
   api_set_month(text, numeric, numeric, boolean), api_add_month(text), api_set_plan(text, text, text, numeric, boolean) from anon, public;
 grant execute on function api_read(), api_add(jsonb), api_update(uuid, jsonb), api_delete(uuid),
   api_set_month(text, numeric, numeric, boolean), api_add_month(text), api_set_plan(text, text, text, numeric, boolean) to authenticated;
+
+revoke all on function api_add_category(text, text, numeric), api_update_category(text, text, boolean), api_order_categories(text[]), api_add_payer(text), api_rename_payer(text, text), api_delete_payer(text), api_order_payers(text[]), api_delete_month(text) from anon, public;
+grant execute on function api_add_category(text, text, numeric), api_update_category(text, text, boolean), api_order_categories(text[]), api_add_payer(text), api_rename_payer(text, text), api_delete_payer(text), api_order_payers(text[]), api_delete_month(text) to authenticated;

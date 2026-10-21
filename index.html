@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#2a78d6">
   <title>Οικογενειακά έξοδα</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M9 22V14M16 22V9M23 22v-5' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=7">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
-  <script type="module" src="js/app.js?v=7"></script>
+  <link rel="stylesheet" href="css/style.css?v=8">
+  <script src="js/vendor/chart-4.4.1.umd.js" defer></script>
+  <script type="module" src="js/app.js?v=8"></script>
 </head>
 <body>
   <header class="topbar">
@@ -116,6 +116,17 @@
         <button type="button" data-theme-choice="light">Φωτεινό</button>
         <button type="button" data-theme-choice="dark">Σκούρο</button>
       </div>
+      <div id="manage-section" hidden>
+        <label class="lbl">Λίστες</label>
+        <button type="button" class="btn" id="open-manage">Κατηγορίες και πρόσωπα</button>
+      </div>
+      <div id="export-section">
+        <label class="lbl">Εξαγωγή</label>
+        <div class="seg">
+          <button type="button" id="export-csv">Πληρωμές σε Excel</button>
+          <button type="button" id="export-json">Πλήρες αντίγραφο</button>
+        </div>
+      </div>
       <div id="share-section">
         <label class="lbl">Άλλη συσκευή</label>
         <button type="button" class="btn" id="share-connect">Σύνδεση άλλης συσκευής (QR code)</button>
@@ -135,6 +146,32 @@
         <button type="submit" class="btn primary">Αποθήκευση</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Categories and people -->
+  <dialog id="manage-dlg">
+    <div class="dlg" id="manage-body">
+      <div class="dlg-head">
+        <h2>Κατηγορίες και πρόσωπα</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Κλείσιμο"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <h3 class="manage-h">Κατηγορίες</h3>
+      <p class="small muted">Άλλαξε όνομα γράφοντας πάνω του. Η απόκρυψη βγάζει την κατηγορία από τις νέες πληρωμές και τους νέους μήνες· οι παλιές πληρωμές μένουν.</p>
+      <div id="cat-list" class="manage-list"></div>
+      <form id="cat-add" class="manage-add" novalidate>
+        <input class="field" id="cat-new-name" autocomplete="off" placeholder="Νέα κατηγορία" aria-label="Όνομα νέας κατηγορίας">
+        <select class="field" id="cat-new-type" aria-label="Τύπος"><option>Επιπλέον</option><option>Πάγιο</option></select>
+        <input class="field num" id="cat-new-plan" inputmode="decimal" autocomplete="off" placeholder="€/μήνα" aria-label="Πλάνο ανά μήνα (€)">
+        <button class="btn primary" type="submit">Προσθήκη</button>
+      </form>
+      <h3 class="manage-h">Ποιος πλήρωσε</h3>
+      <div id="payer-list" class="manage-list"></div>
+      <form id="payer-add" class="manage-add payer" novalidate>
+        <input class="field" id="payer-new-name" autocomplete="off" placeholder="Νέο όνομα" aria-label="Νέο όνομα">
+        <button class="btn primary" type="submit">Προσθήκη</button>
+      </form>
+      <div class="err" id="manage-err" hidden></div>
+    </div>
   </dialog>
 
   <div class="toast" id="toast" role="status" hidden></div>

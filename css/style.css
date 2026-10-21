@@ -395,3 +395,24 @@ dialog { overflow-y: auto; overscroll-behavior: contain; }
 .qr { display: inline-block; background: #fff; padding: 12px; border-radius: 12px; line-height: 0; }
 .qr img, .qr svg { width: 200px; height: 200px; image-rendering: pixelated; }
 .share-box .seg { margin-top: 8px; }
+
+/* ---------- categories and people ---------- */
+.manage-h { font-size: 15px; margin: 16px 0 4px; }
+.manage-list { margin-top: 8px; }
+.manage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 4px; align-items: center; padding: 6px 0; border-top: 1px solid var(--grid); }
+.manage-row:first-child { border-top: 0; }
+.manage-row .field { padding: 8px 10px; }
+.manage-row.hidden-cat .field { color: var(--text-muted); text-decoration: line-through; }
+.manage-row .icon-btn { width: 36px; height: 36px; }
+.manage-row .icon-btn:disabled { opacity: 0.3; cursor: default; }
+.manage-row .tag { font-size: 12px; color: var(--text-secondary); white-space: nowrap; padding: 0 4px; }
+.manage-add { display: grid; grid-template-columns: minmax(0, 1fr) 112px 84px auto; gap: 6px; margin-top: 10px; }
+.manage-add.payer { grid-template-columns: minmax(0, 1fr) auto; }
+.manage-add .field { padding: 8px 10px; }
+@media (max-width: 480px) {
+  .manage-add { grid-template-columns: minmax(0, 1fr) 104px; }
+  .manage-add #cat-new-name { grid-column: 1 / -1; }
+  .manage-add.payer #payer-new-name { grid-column: auto; }
+  .manage-add:not(.payer) button { grid-column: 1 / -1; }
+}
+#manage-body.busy { opacity: 0.6; pointer-events: none; }

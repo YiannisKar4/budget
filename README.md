@@ -12,6 +12,8 @@ Live at **https://yianniskar4.github.io/budget/**
 - **Πλάνα**: the monthly limit, the warning level and each category's plan, for one month or that month
   and every month after it. **Δημιουργία μήνα** starts a new month from the one before.
 - **+ Πληρωμή**: add a payment in a few taps.
+- **Ρυθμίσεις → Κατηγορίες και πρόσωπα**: add, rename, hide and reorder categories and the
+  "who paid" names. **Ρυθμίσεις → Εξαγωγή**: payments as a CSV for Excel, or a full JSON backup.
 
 Everything is free: GitHub Pages hosts the site and Supabase hosts the database and sign-in.
 
@@ -29,8 +31,10 @@ Phone / laptop  ──►  GitHub Pages (this repo: HTML + JS, no build step)
                  Postgres: api_* functions ──► tables, guarded by Row Level Security
 ```
 
-- The site never reads or writes tables directly. It calls seven functions that live in the database:
-  `api_read`, `api_add`, `api_update`, `api_delete`, `api_set_month`, `api_add_month`, `api_set_plan`.
+- The site never reads or writes tables directly. It calls `api_*` functions that live in the database:
+  `api_read`, `api_add`, `api_update`, `api_delete` (payments), `api_set_month`, `api_add_month`,
+  `api_delete_month`, `api_set_plan` (months and plans), `api_add_category`, `api_update_category`,
+  `api_order_categories`, `api_add_payer`, `api_rename_payer`, `api_delete_payer`, `api_order_payers`.
   They are defined in [`supabase/schema.sql`](supabase/schema.sql); Supabase publishes each one
   as `/rest/v1/rpc/<name>` automatically.
 - `api_read` returns the same JSON the old Google Apps Script returned, so the page code
@@ -48,8 +52,9 @@ Phone / laptop  ──►  GitHub Pages (this repo: HTML + JS, no build step)
   Nobody gets anything without signing in.
 - The **secret / service_role key** and the **database password** never go in the site or this repo.
 
-## Everyday tasks (Supabase dashboard → SQL Editor)
+## Who can sign in (Supabase dashboard → SQL Editor)
 
+Everything else has a screen in the site. Access stays in the dashboard on purpose.
 Add someone (remove with `delete from allowed_emails where email = '…';`):
 
 ```sql
@@ -57,19 +62,8 @@ insert into allowed_emails (email, household_id)
 values ('someone@gmail.com', '00000000-0000-4000-8000-000000000001');
 ```
 
-Add a category with a plan for every month (`'fixed'` = Πάγιο, `'extra'` = Επιπλέον):
-
-```sql
-insert into categories (household_id, name, default_type, sort_order)
-values ('00000000-0000-4000-8000-000000000001', 'Γυμναστήριο', 'extra', 20);
-
-insert into category_plans (household_id, month, category_id, type, planned)
-select m.household_id, m.month, c.id, 'extra', 30
-from month_limits m join categories c on c.household_id = m.household_id and c.name = 'Γυμναστήριο';
-```
-
-Backup: the free plan has no downloadable backups. In **Table Editor**, open `payments`,
-`month_limits` and `category_plans` and use **Export → CSV**.
+Backup: the free plan has no downloadable backups. Use **Ρυθμίσεις → Εξαγωγή → Πλήρες αντίγραφο**
+now and then (a JSON file with everything).
 
 Good to know:
 

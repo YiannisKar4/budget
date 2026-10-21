@@ -102,7 +102,7 @@ async function callRpc(fn, args, claims) {
   const values = names.map((n) => {
     const v = args[n];
     if (v === null || v === undefined) return null;
-    return typeof v === 'object' ? JSON.stringify(v) : v;
+    return typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : v;
   });
   const list = names.map((n, i) => {
     const p = params.find((x) => x.n === n);

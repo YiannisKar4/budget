@@ -176,6 +176,63 @@ await rejects(rpc('other@example.com', 'api_read').then(() => as('other@example.
   .then((r) => { if (r.rows[0].n) throw new Error('leak'); throw new Error('fine'); }), /fine/, 'other household');
 ok('api_add_month copies the limit and plans of the previous month');
 
+// Categories, people, months
+{
+  const b = await rpc(email, 'api_read');
+  const months = b.months.length;
+  await rpc(email, 'api_add_category', ['Γυμναστήριο', 'Επιπλέον', 30]);
+  let r = await rpc(email, 'api_read');
+  assert.ok(r.categories.includes('Γυμναστήριο'));
+  assert.equal(r.plans.filter((p) => p.category === 'Γυμναστήριο' && p.plan === 30 && p.type === 'Επιπλέον').length, months);
+  await rejects(rpc(email, 'api_add_category', ['γυμναστήριο', 'Πάγιο', null]), /υπάρχει ήδη/, 'duplicate category');
+  await rejects(rpc(email, 'api_add_category', ['  ', 'Πάγιο', null]), /όνομα/, 'empty category');
+  ok('api_add_category adds it with a plan in every month');
+
+  await rpc(email, 'api_add', [{ date: `${m0}-05`, category: 'Γυμναστήριο', amount: 30, payer: '' }]);
+  await rpc(email, 'api_update_category', ['Γυμναστήριο', 'Γυμναστική', null]);
+  r = await rpc(email, 'api_read');
+  assert.ok(r.entries.some((e) => e.category === 'Γυμναστική') && !r.categories.includes('Γυμναστήριο'));
+  await rejects(rpc(email, 'api_update_category', ['Γυμναστική', cat, null]), /υπάρχει ήδη/, 'rename onto another');
+  await rpc(email, 'api_update_category', ['Γυμναστική', null, true]);
+  r = await rpc(email, 'api_read');
+  assert.ok(!r.categories.includes('Γυμναστική'));
+  assert.deepEqual(r.categoryInfo.find((c) => c.name === 'Γυμναστική'), { name: 'Γυμναστική', type: 'Επιπλέον', hidden: true });
+  assert.ok(r.entries.some((e) => e.category === 'Γυμναστική'), 'past payments keep their category');
+  await rpc(email, 'api_add_month', ['2031-03']);
+  r = await rpc(email, 'api_read');
+  assert.ok(!r.plans.some((p) => p.month === '2031-03' && p.category === 'Γυμναστική'), 'hidden category not in new months');
+  await rpc(email, 'api_update_category', ['Γυμναστική', null, false]);
+  ok('api_update_category renames and hides, keeping past payments');
+
+  const order = [...(await rpc(email, 'api_read')).categories].reverse();
+  await rpc(email, 'api_order_categories', [order]);
+  assert.deepEqual((await rpc(email, 'api_read')).categories, order);
+  ok('api_order_categories sets the order');
+
+  await rpc(email, 'api_add_payer', ['Γιαγιά']);
+  await rejects(rpc(email, 'api_add_payer', ['γιαγιά']), /υπάρχει ήδη/, 'duplicate payer');
+  await rpc(email, 'api_rename_payer', ['Γιαγιά', 'Γιαγιά Μαρία']);
+  r = await rpc(email, 'api_read');
+  assert.equal(r.payers.at(-1), 'Γιαγιά Μαρία');
+  const used = r.entries.find((e) => e.payer)?.payer;
+  if (used) await rejects(rpc(email, 'api_delete_payer', [used]), /έχει πληρωμές/, 'used payer');
+  await rpc(email, 'api_order_payers', [[...r.payers].reverse()]);
+  assert.equal((await rpc(email, 'api_read')).payers[0], 'Γιαγιά Μαρία');
+  await rpc(email, 'api_delete_payer', ['Γιαγιά Μαρία']);
+  assert.ok(!(await rpc(email, 'api_read')).payers.includes('Γιαγιά Μαρία'));
+  ok('payers: add, rename, order, delete only when unused');
+
+  await rejects(rpc(email, 'api_delete_month', [m0]), /έχει πληρωμές/, 'month with payments');
+  await rpc(email, 'api_delete_month', ['2031-03']);
+  r = await rpc(email, 'api_read');
+  assert.ok(!r.months.some((m) => m.month === '2031-03') && !r.plans.some((p) => p.month === '2031-03'));
+  ok('api_delete_month removes an empty month, refuses one with payments');
+
+  await rejects(rpc('other@example.com', 'api_update_category', [cat, 'Hacked', null]), /Άγνωστη κατηγορία/, 'other household');
+  await rejects(rpc(null, 'api_add_category', ['X', 'Πάγιο', null]), /permission denied/, 'anon');
+  ok('the new functions refuse other households and visitors');
+}
+
 // Summary view matches the website maths
 const v = await as(email, `select category, paid::float8 as paid from month_category_summary where month = $1 order by category`, [`${m0}-01`]);
 assert.ok(v.rows.length > 0);

@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#2a78d6">
   <title>Οικογενειακά έξοδα</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M9 22V14M16 22V9M23 22v-5' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=11">
+  <link rel="stylesheet" href="css/style.css?v=12">
   <script src="js/vendor/chart-4.4.1.umd.js" defer></script>
-  <script type="module" src="js/app.js?v=11"></script>
+  <script type="module" src="js/app.js?v=12"></script>
 </head>
 <body>
   <header class="topbar">
@@ -94,6 +94,7 @@
       <label class="check"><input type="checkbox" id="c-wide"> Φαρδύ γράφημα</label>
       <label class="lbl" id="c-cats-lbl">Κατηγορίες (καμία επιλογή = όλες)</label>
       <div class="chips" id="c-cats"></div>
+      <div class="err" id="chart-err" hidden></div>
       <div class="row-actions">
         <button type="button" class="btn danger" id="chart-delete">Διαγραφή</button>
         <span class="spacer"></span>
@@ -109,7 +110,7 @@
         <h2>Ανάλυση κατηγοριών</h2>
         <button type="button" class="icon-btn" data-close aria-label="Κλείσιμο"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
-      <p class="small muted">Προσθέτει στα Γραφήματα: κάρτες με μια ματιά, ανά μήνα, ανά τρίμηνο, ανά έτος και την πορεία του μήνα, μόνο για αυτές τις κατηγορίες. Πατώντας σε οποιοδήποτε σημείο βλέπεις τις πληρωμές του.</p>
+      <p class="small muted">Προσθέτει στα Γραφήματα τρία γραφήματα για αυτές τις κατηγορίες: κάρτες με μια ματιά, την πορεία του μήνα και στήλες ανά μήνα (αλλάζει σε τρίμηνο, εξάμηνο ή έτος από το ✎). Όσα υπάρχουν ήδη δεν ξαναφτιάχνονται. Πάτα σε οποιοδήποτε σημείο για να δεις τις πληρωμές του.</p>
       <label class="lbl">Κατηγορίες</label>
       <div class="chips" id="a-cats"></div>
       <div class="err" id="a-err" hidden>Διάλεξε τουλάχιστον μία κατηγορία.</div>

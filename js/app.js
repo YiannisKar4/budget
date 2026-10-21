@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=11';
-import * as supa from './supa.js?v=11';
-import { STORAGE_PREFIX } from './config.js?v=11';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=11';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=11';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=12';
+import * as supa from './supa.js?v=12';
+import { STORAGE_PREFIX } from './config.js?v=12';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=12';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort } from './charts.js?v=12';
 
 /* ------------------------------------------------------------------ state */
 
@@ -65,10 +65,22 @@ const pill = (status, label = STATUS_LABEL[status]) => `<span class="pill ${stat
 
 /* ----------------------------------------------------------------- storage */
 
+/** What a chart shows, ignoring its title and layout: two charts with the same key are the same chart. */
+function chartKey(c) {
+  const cats = [...(c.categories || [])].sort().join('|');
+  if (c.kind === 'tiles') return `tiles#${cats}`;
+  return [c.kind, c.groupBy, c.splitBy || 'none', String(c.period), c.cumulative ? 1 : 0, cats].join('#');
+}
+/** Keeps the first of any charts that show exactly the same thing. */
+function withoutDuplicates(charts) {
+  const seen = new Set();
+  return charts.filter((c) => (seen.has(chartKey(c)) ? false : seen.add(chartKey(c))));
+}
+
 function loadCharts() {
   try {
     const c = JSON.parse(localStorage.getItem(CHARTS_KEY));
-    if (Array.isArray(c) && c.length) return c;
+    if (Array.isArray(c) && c.length) return withoutDuplicates(c);
   } catch { /* use defaults */ }
   return structuredClone(DEFAULT_CHARTS);
 }
@@ -769,6 +781,7 @@ function openChart(cfg) {
   $('#c-plan').checked = !!c.showPlan;
   $('#c-cum').checked = !!c.cumulative;
   $('#c-wide').checked = !!c.wide;
+  $('#chart-err').hidden = true;
   syncChartForm();
   const chosen = new Set(c.categories || []);
   $('#c-cats').innerHTML = state.data.categories
@@ -801,31 +814,51 @@ function openAnalysis() {
 function saveAnalysis(ev) {
   ev.preventDefault();
   const categories = [...document.querySelectorAll('#a-cats input:checked')].map((i) => i.value);
-  if (!categories.length) { $('#a-err').hidden = false; return; }
+  if (!categories.length) {
+    $('#a-err').textContent = 'Διάλεξε τουλάχιστον μία κατηγορία.';
+    $('#a-err').hidden = false;
+    return;
+  }
   const name = categories.length === 1 ? categories[0] : `${categories.length} κατηγορίες`;
-  const base = { categories, showPlan: true, cumulative: false, wide: true };
+  const base = { categories, showPlan: true, cumulative: false, wide: true, splitBy: 'none' };
   const id = Date.now();
-  const added = [
-    { ...base, id: `c${id}a`, title: `${name}: με μια ματιά`, kind: 'tiles', groupBy: 'category', splitBy: 'none', period: 'month' },
-    { ...base, id: `c${id}b`, title: `${name}: ανά μήνα`, kind: 'bar', groupBy: 'month', splitBy: categories.length > 1 ? 'category' : 'payer', period: '12' },
-    { ...base, id: `c${id}c`, title: `${name}: ανά τρίμηνο`, kind: 'bar', groupBy: 'quarter', splitBy: categories.length > 1 ? 'category' : 'payer', period: '24' },
-    { ...base, id: `c${id}d`, title: `${name}: ανά έτος`, kind: 'bar', groupBy: 'year', splitBy: categories.length > 1 ? 'category' : 'payer', period: 'all', wide: false },
-    { ...base, id: `c${id}e`, title: `${name}: πορεία του μήνα`, kind: 'line', groupBy: 'day', splitBy: 'none', period: 'month', cumulative: true, wide: false },
+  const wanted = [
+    { ...base, id: `c${id}a`, title: `${name}: με μια ματιά`, kind: 'tiles', groupBy: 'category', period: 'month' },
+    { ...base, id: `c${id}b`, title: `${name}: πορεία του μήνα`, kind: 'line', groupBy: 'day', period: 'month', cumulative: true, wide: false },
+    { ...base, id: `c${id}c`, title: `${name}: ανά μήνα`, kind: 'bar', groupBy: 'month', splitBy: categories.length > 1 ? 'category' : 'none', period: '12', wide: false },
   ];
+  // A chart that already shows the same thing is not made again.
+  const have = new Set(state.charts.map(chartKey));
+  const added = wanted.filter((c) => !have.has(chartKey(c)));
+  if (!added.length) {
+    $('#a-err').textContent = 'Αυτά τα γραφήματα υπάρχουν ήδη για αυτές τις κατηγορίες.';
+    $('#a-err').hidden = false;
+    return;
+  }
   // New analysis goes on top, so it is the first thing you see.
   state.charts = added.concat(state.charts);
   saveCharts();
   $('#analysis-dlg').close();
   renderAll();
   window.scrollTo({ top: 0 });
-  toast('Προστέθηκαν 5 γραφήματα στην αρχή της σελίδας');
+  const skipped = wanted.length - added.length;
+  toast(skipped
+    ? `Προστέθηκ${added.length === 1 ? 'ε 1 γράφημα' : `αν ${added.length} γραφήματα`}. ${skipped === 1 ? 'Το άλλο υπήρχε' : `Τα άλλα ${skipped} υπήρχαν`} ήδη.`
+    : `Προστέθηκαν ${added.length} γραφήματα στην αρχή της σελίδας`);
+}
+
+// Titles made by "Ανάλυση κατηγοριών" end in ": ανά μήνα"; they follow a change of grouping.
+const PER = { month: 'ανά μήνα', quarter: 'ανά τρίμηνο', half: 'ανά εξάμηνο', year: 'ανά έτος' };
+function retitle(title, groupBy) {
+  const m = /^(.*): ανά (μήνα|τρίμηνο|εξάμηνο|έτος)$/.exec(title);
+  return m && PER[groupBy] ? `${m[1]}: ${PER[groupBy]}` : title;
 }
 
 function saveChart(ev) {
   ev.preventDefault();
   const groupBy = $('#c-group').value;
   const next = {
-    title: $('#c-title').value.trim() || GROUPS[groupBy],
+    title: retitle($('#c-title').value.trim(), groupBy) || GROUPS[groupBy],
     groupBy,
     kind: $('#c-kind').value,
     period: $('#c-period').value,
@@ -835,6 +868,12 @@ function saveChart(ev) {
     wide: $('#c-wide').checked,
     categories: [...document.querySelectorAll('#c-cats input:checked')].map((i) => i.value),
   };
+  const same = state.charts.find((c) => c !== state.editingChart && chartKey(c) === chartKey(next));
+  if (same) {
+    $('#chart-err').textContent = `Υπάρχει ήδη γράφημα με αυτές τις ρυθμίσεις: «${same.title || GROUPS[same.groupBy]}».`;
+    $('#chart-err').hidden = false;
+    return;
+  }
   if (state.editingChart) Object.assign(state.editingChart, next);
   else state.charts.push({ id: `c${Date.now()}`, ...next });
   saveCharts();

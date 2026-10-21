@@ -11,7 +11,8 @@ Live at **https://yianniskar4.github.io/budget/**
 - **Γραφήματα**: charts you can customise, add, reorder and delete. Your layout is saved on each device.
   Group by category, person, day, month, quarter, half-year or year. **Ανάλυση κατηγοριών** adds a ready set
   for the categories you pick (e.g. super market, personal, one-off): cards with this month against the plan and
-  the 3-month average, then by month, quarter, year and the month's running total.
+  the 3-month average, the month's running total and columns by month (change it to quarter, half-year or year
+  with ✎). Charts that already exist are not added again.
   Tap any column, slice, table row or card to open **Πληρωμές** filtered to exactly those payments.
 - **Πλάνα**: the monthly limit, the warning level and each category's plan, for one month or that month
   and every month after it. **Δημιουργία μήνα** starts a new month from the one before.

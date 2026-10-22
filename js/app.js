@@ -1,14 +1,19 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=14';
-import * as supa from './supa.js?v=14';
-import { STORAGE_PREFIX } from './config.js?v=14';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=14';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=14';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=15';
+import * as supa from './supa.js?v=15';
+import { STORAGE_PREFIX } from './config.js?v=15';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=15';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=15';
 
 /* ------------------------------------------------------------------ state */
 
 const CACHE_KEY = `${STORAGE_PREFIX}.cache`;
 const CHARTS_KEY = `${STORAGE_PREFIX}.charts`;
 const VIEWS = ['overview', 'entries', 'charts', 'plans'];
+
+/** Πληρωμές with no filter: the selected month, everything in it. */
+function cleanFilter(extra = {}) {
+  return { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '', ...extra };
+}
 
 const state = {
   settings: loadSettings(),
@@ -17,7 +22,8 @@ const state = {
   view: 'overview',
   loading: false,
   lastFetch: 0,
-  entryFilter: { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '' },
+  entryFilter: cleanFilter(),
+  plansDirty: null, // set by the Πλάνα screen: () => true while it has changes that are not saved
   chartPayer: '',
   charts: loadCharts(),
   chartInstances: [],
@@ -147,7 +153,8 @@ async function fetchData({ quiet = false } = {}) {
     state.lastFetch = Date.now();
     saveCache();
     if (!state.month) state.month = defaultMonth(state.data);
-    renderAll();
+    // Don't redraw over plan changes that are not saved yet; the new data shows once they are saved or dropped.
+    if (!(state.plansDirty && state.plansDirty())) renderAll();
   } catch (err) {
     if (handleAuthError(err)) return;
     if (!quiet || !state.data) toast(err.message, true);
@@ -200,6 +207,7 @@ function renderAll() {
     ? `Ενημέρωση ${new Date(state.data.updatedAt).toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })}`
     : '';
   destroyCharts();
+  state.plansDirty = null;
   ({ overview: renderOverview, entries: renderEntries, charts: renderCharts, plans: renderPlans })[state.view]();
 }
 
@@ -217,8 +225,11 @@ function renderMonthPicker() {
   sel.value = state.month;
 }
 
-function setMonth(m) {
+async function setMonth(m) {
+  if (m === state.month || !(await leavePlans())) return renderMonthPicker();
   state.month = m;
+  // A chart's date range no longer applies: show the chosen month.
+  if (state.entryFilter.scope === 'range') state.entryFilter = cleanFilter();
   renderAll();
 }
 
@@ -429,7 +440,7 @@ function renderOverview() {
 
   document.querySelectorAll('.cat-row').forEach((el) => {
     const go = () => {
-      state.entryFilter = { ...state.entryFilter, category: el.dataset.category, q: '', scope: 'month' };
+      state.entryFilter = cleanFilter({ category: el.dataset.category });
       go_('entries');
     };
     el.addEventListener('click', go);
@@ -439,16 +450,20 @@ function renderOverview() {
 
 /* -------- entries -------- */
 
+/** Whether a payment shows in Πληρωμές with filter f. */
+function entryMatches(e, f) {
+  const q = looseText(f.q);
+  if (f.scope === 'range' ? e.date < f.from || e.date > f.to : f.scope !== 'all' && monthOf(e.date) !== state.month) return false;
+  if (f.cats ? !f.cats.includes(e.category) : f.category && e.category !== f.category) return false;
+  if (f.payer && e.payer !== f.payer) return false;
+  return !q || looseText(`${e.description} ${e.comments} ${e.category}`).includes(q);
+}
+
 function renderEntries() {
   const f = state.entryFilter;
   const d = state.data;
-  const q = looseText(f.q);
-  const inScope = (e) => (f.scope === 'all' ? true : f.scope === 'range' ? e.date >= f.from && e.date <= f.to : monthOf(e.date) === state.month);
   const list = d.entries
-    .filter(inScope)
-    .filter((e) => (f.cats ? f.cats.includes(e.category) : !f.category || e.category === f.category))
-    .filter((e) => !f.payer || e.payer === f.payer)
-    .filter((e) => !q || looseText(`${e.description} ${e.comments} ${e.category}`).includes(q))
+    .filter((e) => entryMatches(e, f))
     .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
   const total = list.reduce((s, e) => s + e.amount, 0);
 
@@ -493,7 +508,7 @@ function renderEntries() {
   $('#ef-cat').addEventListener('change', (ev) => { state.entryFilter.cats = null; upd('category')(ev); });
   $('#drill-back')?.addEventListener('click', () => go_('charts'));
   $('#drill-clear')?.addEventListener('click', () => {
-    state.entryFilter = { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '' };
+    state.entryFilter = cleanFilter();
     renderEntries();
   });
   $('#ef-payer').addEventListener('change', upd('payer'));
@@ -591,6 +606,8 @@ async function saveEntry(ev) {
     saveCache();
     $('#entry-dlg').close();
     if (monthOf(entry.date) !== state.month) state.month = monthOf(entry.date);
+    // The payment you just saved should be on screen: drop a filter that would hide it.
+    if (!entryMatches(entry, state.entryFilter)) state.entryFilter = cleanFilter();
     renderAll();
     toast(editing ? 'Η πληρωμή άλλαξε' : `Καταχωρίστηκε: ${euro(entry.amount)} · ${entry.category}`);
     fetchData({ quiet: true });
@@ -1008,18 +1025,20 @@ function renderPlans() {
   };
   form.addEventListener('input', changes);
   form.addEventListener('change', changes);
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
+  let saving = false;
+  state.plansDirty = () => { if (saving) return false; const ch = changes(); return ch.rows.length > 0 || ch.monthChanged; };
+  // Saves and resolves true, or shows the error and resolves false.
+  const save = async () => {
     const err = $('#plans-err');
     err.hidden = true;
     const ch = changes();
     const forward = $('#p-forward').checked;
     const bad = ch.rows.find((r) => r.plan !== null && (!isFinite(r.plan) || r.plan < 0));
-    if (bad) { err.textContent = `Μη έγκυρο ποσό στο «${bad.category}».`; err.hidden = false; return; }
+    if (bad) { err.textContent = `Μη έγκυρο ποσό στο «${bad.category}».`; err.hidden = false; return false; }
     if (ch.monthChanged && (!isFinite(ch.cap) || ch.cap < 0 || !(ch.warn > 0 && ch.warn <= 1))) {
       err.textContent = 'Έλεγξε το ταβάνι και την ειδοποίηση (1 έως 100%).';
       err.hidden = false;
-      return;
+      return false;
     }
     const btn = $('#plans-save');
     btn.disabled = true;
@@ -1027,16 +1046,21 @@ function renderPlans() {
     try {
       if (ch.monthChanged) await call(state.settings, 'setMonth', { month: m, cap: ch.cap, warn: ch.warn, forward });
       for (const r of ch.rows) await call(state.settings, 'setPlan', { month: m, category: r.category, type: r.type, plan: r.plan, forward });
+      saving = true;
       toast('Τα πλάνα αποθηκεύτηκαν');
       await fetchData();
+      return true;
     } catch (e) {
-      if (handleAuthError(e)) return;
+      if (handleAuthError(e)) return false;
       err.textContent = e.message;
       err.hidden = false;
       btn.disabled = false;
       btn.textContent = 'Αποθήκευση αλλαγών';
+      return false;
     }
-  });
+  };
+  state.savePlans = save;
+  form.addEventListener('submit', (ev) => { ev.preventDefault(); save(); });
 }
 
 /* ------------------------------------------------------------ ask dialog */
@@ -1045,7 +1069,7 @@ function renderPlans() {
  * The site's own confirmation window (instead of the browser's confirm/prompt).
  * Resolves true when the person presses the main button.
  */
-function ask({ title, text = '', ok = 'OK', danger = false, cancel = true, value = null }) {
+function ask({ title, text = '', ok = 'OK', danger = false, cancel = true, value = null, alt = null, cancelText = 'Άκυρο' }) {
   const dlg = $('#ask-dlg');
   $('#ask-title').textContent = title;
   $('#ask-text').textContent = text;
@@ -1057,10 +1081,14 @@ function ask({ title, text = '', ok = 'OK', danger = false, cancel = true, value
   okBtn.textContent = ok;
   okBtn.classList.toggle('danger-fill', danger);
   $('#ask-cancel').hidden = !cancel;
+  $('#ask-cancel').textContent = cancelText;
+  // A third choice: then it resolves 'ok', 'alt' or '' (cancel, Esc) instead of true/false.
+  $('#ask-alt').hidden = !alt;
+  $('#ask-alt').textContent = alt || '';
   dlg.returnValue = '';
   dlg.showModal();
   if (value !== null) { field.focus(); field.select(); } else okBtn.focus();
-  return new Promise((resolve) => dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true }));
+  return new Promise((resolve) => dlg.addEventListener('close', () => resolve(alt ? dlg.returnValue : dlg.returnValue === 'ok'), { once: true }));
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -1320,6 +1348,26 @@ function exportJson() {
 
 /* ------------------------------------------------------------------ routing */
 
+/** A tab was pressed: Πληρωμές opens clean, and unsaved plan changes are not lost silently. */
+async function openTab(view) {
+  if (view === state.view && view !== 'entries') return;
+  if (!(await leavePlans())) return;
+  if (view === 'entries') state.entryFilter = cleanFilter();
+  go_(view);
+}
+
+/**
+ * Before leaving Πλάνα (tab, month, refresh) with changes that are not saved:
+ * asks to save, drop them or stay. Resolves true when it is fine to leave.
+ */
+async function leavePlans() {
+  if (state.view !== 'plans' || !state.plansDirty || !state.plansDirty()) return true;
+  const choice = await ask({ title: 'Δεν αποθηκεύτηκαν οι αλλαγές', text: 'Άλλαξες πλάνα σε αυτόν τον μήνα. Τι να γίνει με τις αλλαγές;', ok: 'Αποθήκευση', alt: 'Απόρριψη', cancelText: 'Μένω εδώ' });
+  if (choice === 'alt') { state.plansDirty = null; return true; }
+  if (choice !== 'ok') return false;
+  return state.savePlans ? state.savePlans() : false;
+}
+
 function go_(view) {
   state.view = VIEWS.includes(view) ? view : 'overview';
   if (location.hash !== `#${state.view}`) history.replaceState(null, '', `#${state.view}`);
@@ -1344,7 +1392,7 @@ function init() {
   if (!usesSupabase()) consumeConnectLink();
   state.view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 
-  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => go_(t.dataset.view)));
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => openTab(t.dataset.view)));
   window.addEventListener('hashchange', () => {
     if (!usesSupabase() && consumeConnectLink()) {
       state.data = null;
@@ -1373,7 +1421,7 @@ function init() {
   $('#month').addEventListener('change', (e) => setMonth(e.target.value));
   $('#prev-month').addEventListener('click', () => setMonth(addMonths(state.month, -1)));
   $('#next-month').addEventListener('click', () => setMonth(addMonths(state.month, 1)));
-  $('#refresh').addEventListener('click', () => fetchData());
+  $('#refresh').addEventListener('click', async () => { if (await leavePlans()) { state.plansDirty = null; fetchData(); } });
   $('#open-settings').addEventListener('click', openSettings);
   $('#fab').addEventListener('click', () => openEntry(null));
 

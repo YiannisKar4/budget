@@ -9,6 +9,7 @@ export const STATUS = {
   NEAR: 'near',        // ΚΟΝΤΑ ΣΤΟ ΟΡΙΟ
   OK: 'ok',            // ΕΝΤΟΣ ΠΛΑΝΟΥ / ΚΑΤΩ ΑΠΟ ΤΟ ΟΡΙΟ
   PAID: 'paid',        // plan fully paid, nothing over
+  PENDING: 'pending',  // fixed bill with nothing paid yet this month
   NOPLAN: 'noplan',    // ΧΩΡΙΣ ΠΛΑΝΟ
 };
 
@@ -73,7 +74,8 @@ export function monthSummary(data, month) {
       paid,
       remaining: plan === null ? null : round2(Math.max(0, plan - paid)),
       over: plan === null ? null : round2(Math.max(0, paid - plan)),
-      status: categoryStatus(plan, paid, warn),
+      // A fixed bill with nothing paid yet is still to be paid, not "within plan".
+      status: type === FIXED && plan > 0 && paid === 0 ? STATUS.PENDING : categoryStatus(plan, paid, warn),
     };
   });
 

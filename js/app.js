@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=16';
-import * as supa from './supa.js?v=16';
-import { STORAGE_PREFIX } from './config.js?v=16';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=16';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=16';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=17';
+import * as supa from './supa.js?v=17';
+import { STORAGE_PREFIX } from './config.js?v=17';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=17';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=17';
 
 /* ------------------------------------------------------------------ state */
 
@@ -52,6 +52,8 @@ const ICON = {
   near: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   // Within plan, money still left: a part-filled circle.
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4A9 9 0 0 0 12 3z" fill="currentColor" stroke="none"/></svg>',
+  // Fixed bill not paid yet: an empty circle.
+  pending: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="3.2 3.2"><circle cx="12" cy="12" r="9"/></svg>',
   // Plan fully paid: a ticked circle.
   paid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9"/></svg>',
   noplan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
@@ -67,6 +69,7 @@ const STATUS_LABEL = {
   [STATUS.NEAR]: 'Κοντά στο όριο',
   [STATUS.OK]: 'Εντός πλάνου',
   [STATUS.PAID]: 'Πληρώθηκε',
+  [STATUS.PENDING]: 'Δεν πληρώθηκε ακόμα',
   [STATUS.NOPLAN]: 'Χωρίς πλάνο',
 };
 const pill = (status, label = STATUS_LABEL[status]) => `<span class="pill ${status}">${ICON[status] || ''}${esc(label)}</span>`;

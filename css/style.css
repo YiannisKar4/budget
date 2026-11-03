@@ -222,7 +222,9 @@ h2 { font-size: 16px; margin: 0; }
 .pill svg { width: 12px; height: 12px; }
 .pill.over { background: var(--critical-soft); color: var(--critical-ink); }
 .pill.near { background: var(--warning-soft); color: var(--warning-ink); }
-.pill.ok, .pill.paid { background: var(--good-soft); color: var(--good-ink); }
+.pill.ok { background: var(--good-soft); color: var(--good-ink); }
+/* Fully paid: done, so it gets the site's blue instead of the "fine so far" green. */
+.pill.paid { background: var(--accent-soft); color: var(--accent); }
 
 .banner {
   display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--radius);

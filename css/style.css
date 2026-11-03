@@ -211,6 +211,8 @@ h2 { font-size: 16px; margin: 0; }
 .bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--accent); }
 .bar > i.over { background: var(--critical); }
 .bar > i.near { background: var(--warning); }
+.bar > i.ok { background: var(--good); }
+.bar > i.muted { background: var(--text-muted); }
 .bar > b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-secondary); border-radius: 2px; }
 
 /* ---------- status ---------- */
@@ -223,8 +225,10 @@ h2 { font-size: 16px; margin: 0; }
 .pill.over { background: var(--critical-soft); color: var(--critical-ink); }
 .pill.near { background: var(--warning-soft); color: var(--warning-ink); }
 .pill.ok { background: var(--good-soft); color: var(--good-ink); }
-/* Fully paid: done, so it gets the site's blue instead of the "fine so far" green. */
-.pill.paid { background: var(--accent-soft); color: var(--accent); }
+/* Green: fine. Yellow: careful. Red: over. Grey: not happened yet. */
+.pill.paid { background: var(--good-soft); color: var(--good-ink); }
+.pill.atcap { background: var(--warning-soft); color: var(--warning-ink); }
+.pill.partial, .pill.none { background: var(--surface-sunk); color: var(--text-secondary); }
 /* Fixed bill not paid yet: neutral grey, nothing wrong yet. */
 .pill.pending { background: var(--surface-sunk); color: var(--text-secondary); border: 1px dashed var(--axis); }
 

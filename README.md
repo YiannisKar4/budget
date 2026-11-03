@@ -76,8 +76,9 @@ Good to know:
 - The built-in email sender allows only a few emails an hour. Each device signs in once, so this is enough.
   To also show a sign-in code in the email (handy for an iPhone home-screen app), set up custom SMTP
   (for example Gmail with an app password) and add `{{ .Token }}` to the Magic Link template.
-- One difference from the sheet: when a category's plan is exactly paid, the site shows
-  **Πληρώθηκε** instead of **Κοντά στο όριο**.
+- Category badges follow two rules (green fine, yellow careful, red over, grey not yet):
+  **Πάγια** are bills: Δεν πληρώθηκε ακόμα, Μένουν X €, Πληρώθηκε, Ακριβότερο.
+  **Επιπλέον** have a ceiling: Εντός πλάνου, Κοντά στο ταβάνι (from the warning level), Στο ταβάνι, Πάνω από το ταβάνι.
 
 ## Changing the database
 

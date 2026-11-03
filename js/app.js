@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=17';
-import * as supa from './supa.js?v=17';
-import { STORAGE_PREFIX } from './config.js?v=17';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=17';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=17';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=18';
+import * as supa from './supa.js?v=18';
+import { STORAGE_PREFIX } from './config.js?v=18';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=18';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=18';
 
 /* ------------------------------------------------------------------ state */
 
@@ -54,6 +54,8 @@ const ICON = {
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4A9 9 0 0 0 12 3z" fill="currentColor" stroke="none"/></svg>',
   // Fixed bill not paid yet: an empty circle.
   pending: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="3.2 3.2"><circle cx="12" cy="12" r="9"/></svg>',
+  // Spent exactly the ceiling: a full circle.
+  atcap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/></svg>',
   // Plan fully paid: a ticked circle.
   paid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9"/></svg>',
   noplan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>',
@@ -66,12 +68,19 @@ const ICON = {
 
 const STATUS_LABEL = {
   [STATUS.OVER]: 'Υπέρβαση',
-  [STATUS.NEAR]: 'Κοντά στο όριο',
+  [STATUS.NEAR]: 'Κοντά στο ταβάνι',
+  [STATUS.ATCAP]: 'Στο ταβάνι',
   [STATUS.OK]: 'Εντός πλάνου',
   [STATUS.PAID]: 'Πληρώθηκε',
   [STATUS.PENDING]: 'Δεν πληρώθηκε ακόμα',
+  [STATUS.PARTIAL]: 'Πληρώθηκε μέρος',
+  [STATUS.NONE]: 'Καμία χρέωση',
   [STATUS.NOPLAN]: 'Χωρίς πλάνο',
 };
+ICON.partial = ICON.ok;
+ICON.none = ICON.noplan;
+// The bar under each category has the colour of its badge.
+const BAR_CLASS = { ok: 'ok', paid: 'ok', near: 'near', atcap: 'near', over: 'over' };
 const pill = (status, label = STATUS_LABEL[status]) => `<span class="pill ${status}">${ICON[status] || ''}${esc(label)}</span>`;
 
 /* ----------------------------------------------------------------- storage */
@@ -394,14 +403,25 @@ function renderOverview() {
 
   const row = (r) => {
     const ratio = r.plan ? r.paid / r.plan : r.paid ? 1 : 0;
-    const cls = r.status === STATUS.OVER ? 'over' : r.status === STATUS.NEAR ? 'near' : '';
-    const meta = r.plan === null ? 'Χωρίς πλάνο' : r.over ? `Υπέρβαση ${euro(r.over)}` : r.remaining ? `Απομένουν ${euro(r.remaining)}` : 'Ολοκληρώθηκε';
+    const cls = BAR_CLASS[r.status] || 'muted';
+    const fixedBill = r.type === FIXED;
+    const meta = {
+      [STATUS.NOPLAN]: 'Χωρίς πλάνο',
+      [STATUS.NONE]: 'Τίποτα να πληρωθεί',
+      [STATUS.PENDING]: `Οφείλονται ${euro(r.remaining)}`,
+      [STATUS.PARTIAL]: 'Πληρώθηκε μέρος',
+      [STATUS.PAID]: 'Ολοκληρώθηκε',
+      [STATUS.ATCAP]: 'Απομένουν 0 €',
+      [STATUS.OVER]: `+${euro(r.over)} ${fixedBill ? 'από το πλάνο' : 'από το ταβάνι'}`,
+    }[r.status] || `Απομένουν ${euro(r.remaining)}`;
+    const label = r.status === STATUS.OVER ? (fixedBill ? 'Ακριβότερο' : 'Πάνω από το ταβάνι')
+      : r.status === STATUS.PARTIAL ? `Μένουν ${euro(r.remaining)}` : undefined;
     return `
       <li class="cat-row" data-category="${esc(r.category)}" tabindex="0">
         <div class="name"><span>${esc(r.category)}</span></div>
         <div class="amounts">${euro(r.paid)} <small>/ ${r.plan === null ? '—' : euro(r.plan)}</small></div>
         <div class="bar"><i class="${cls}" style="width:${Math.min(100, ratio * 100)}%"></i></div>
-        <div class="meta"><span>${meta}</span>${pill(r.status)}</div>
+        <div class="meta"><span>${meta}</span>${pill(r.status, label)}</div>
       </li>`;
   };
   const fixed = s.rows.filter((r) => r.type === FIXED);
@@ -417,7 +437,7 @@ function renderOverview() {
         <div class="label">Πραγματικά έξοδα</div>
         <div class="value">${euro(s.spent)}</div>
         <div class="sub">από ${euro(s.cap)} ταβάνι · ${s.count} πληρωμές</div>
-        <div class="bar"><i class="${s.statusActual === STATUS.OVER ? 'over' : s.statusActual === STATUS.NEAR ? 'near' : ''}" style="width:${fill}%"></i><b style="left:${s.warn * 100}%" title="Ειδοποίηση ${pct(s.warn)}"></b></div>
+        <div class="bar"><i class="${BAR_CLASS[s.statusActual] || 'ok'}" style="width:${fill}%"></i><b style="left:${s.warn * 100}%" title="Ειδοποίηση ${pct(s.warn)}"></b></div>
       </div>
       <div class="card tile">
         <div class="label">Πάγια που απομένουν</div>

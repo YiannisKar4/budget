@@ -10,6 +10,9 @@ export const STATUS = {
   OK: 'ok',            // ΕΝΤΟΣ ΠΛΑΝΟΥ / ΚΑΤΩ ΑΠΟ ΤΟ ΟΡΙΟ
   PAID: 'paid',        // plan fully paid, nothing over
   PENDING: 'pending',  // fixed bill with nothing paid yet this month
+  PARTIAL: 'partial',  // fixed bill partly paid
+  ATCAP: 'atcap',      // extra category: spent exactly its plan, nothing left
+  NONE: 'none',        // fixed bill with a plan of 0 and nothing paid
   NOPLAN: 'noplan',    // ΧΩΡΙΣ ΠΛΑΝΟ
 };
 
@@ -34,6 +37,30 @@ export function categoryStatus(plan, paid, warn) {
   if (plan === null || plan === undefined) return STATUS.NOPLAN;
   if (paid > plan + 1e-9) return STATUS.OVER;
   if (plan > 0 && Math.abs(paid - plan) < 0.005) return STATUS.PAID;
+  if (plan > 0 && paid >= plan * warn) return STATUS.NEAR;
+  return STATUS.OK;
+}
+
+/**
+ * Πάγια are bills: they are either paid or not yet. There is no "near the limit".
+ * Επιπλέον are budgets with a ceiling: fine, near it, at it, or over it.
+ */
+export function rowStatus(type, plan, paid, warn) {
+  if (plan === null || plan === undefined) return STATUS.NOPLAN;
+  if (type === FIXED) {
+    if (paid > plan + 0.005) return STATUS.OVER;
+    if (plan === 0 && paid === 0) return STATUS.NONE;
+    if (paid === 0) return STATUS.PENDING;
+    if (plan - paid >= 0.005) return STATUS.PARTIAL;
+    return STATUS.PAID;
+  }
+  return capLikeStatus(plan, paid, warn);
+}
+
+/** A spending ceiling: under the warning level, near it, exactly at it, or over it. */
+export function capLikeStatus(plan, paid, warn) {
+  if (paid > plan + 0.005) return STATUS.OVER;
+  if (plan > 0 && Math.abs(paid - plan) < 0.005) return STATUS.ATCAP;
   if (plan > 0 && paid >= plan * warn) return STATUS.NEAR;
   return STATUS.OK;
 }
@@ -74,8 +101,7 @@ export function monthSummary(data, month) {
       paid,
       remaining: plan === null ? null : round2(Math.max(0, plan - paid)),
       over: plan === null ? null : round2(Math.max(0, paid - plan)),
-      // A fixed bill with nothing paid yet is still to be paid, not "within plan".
-      status: type === FIXED && plan > 0 && paid === 0 ? STATUS.PENDING : categoryStatus(plan, paid, warn),
+      status: rowStatus(type, plan, paid, warn),
     };
   });
 
@@ -107,7 +133,7 @@ export function monthSummary(data, month) {
       paid: sum('paid'),
       remaining: sum('remaining'),
       over: sum('over'),
-      status: categoryStatus(planTotal, sum('paid'), warn),
+      status: capLikeStatus(planTotal, sum('paid'), warn),
     },
     uncategorised,
     rows,

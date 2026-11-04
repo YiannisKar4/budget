@@ -109,6 +109,9 @@ node dev/supabase-mock.mjs      # site on http://localhost:8090 with a fake Supa
 
 Sign in as `a@example.com`. No email is sent: the code and link are at
 `http://localhost:8091/__mail?email=a@example.com`. Pass a `data.sql` to the mock to try it with real data.
+`POST /__reset` reloads clean data and `POST /__quit` stops the mock.
+`bash dev/ui-tests.sh [data.sql] test1.cjs …` starts the mock, resets it before each Playwright test and stops it at the end.
+`.claude/settings.json` lets Claude run the tests and push this repo without asking each time.
 
 ### Releasing a change
 

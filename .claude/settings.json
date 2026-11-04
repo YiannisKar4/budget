@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run test:db)",
+      "Bash(npm install)",
+      "Bash(node dev/supabase-mock.mjs:*)",
+      "Bash(node --check:*)",
+      "Bash(bash dev/ui-tests.sh:*)",
+      "Bash(curl -s -X POST localhost:8090/__quit)",
+      "Bash(curl -s -X POST localhost:8091/__quit)",
+      "Bash(curl -s -X POST localhost:8191/__quit)",
+      "Bash(git push origin supabase)",
+      "Bash(git push -q origin supabase)",
+      "Bash(git push origin supabase:main)",
+      "Bash(git push -q origin supabase:main)",
+      "Bash(gh run list -R YiannisKar4/budget:*)"
+    ]
+  }
+}

@@ -33,27 +33,37 @@ await db.exec(`
   grant usage on schema public to anon, authenticated;
   alter default privileges in schema public revoke execute on functions from public;
 `);
-await db.exec(fs.readFileSync(`${root}supabase/schema.sql`, 'utf8'));
-if (process.argv[2]) {
-  await db.exec(fs.readFileSync(process.argv[2], 'utf8'));
-} else {
-  const H = '00000000-0000-4000-8000-000000000001';
+// Builds the schema and loads the data. Called at start and by POST /__reset, so tests
+// can start from clean data without restarting the server.
+async function seed() {
   await db.exec(`
-    insert into households (id, name) values ('${H}', 'Test');
-    insert into allowed_emails values ('a@example.com', '${H}'), ('b@example.com', '${H}');
-    insert into payers (household_id, name, sort_order) values ('${H}', 'Αθηνά', 0), ('${H}', 'Γιάννης', 1), ('${H}', 'Κοινό', 2);
-    insert into categories (household_id, name, default_type, sort_order) values
-      ('${H}', 'Ενοίκιο', 'fixed', 0), ('${H}', 'Σούπερ μάρκετ', 'extra', 1), ('${H}', 'Ρεύμα', 'fixed', 2);
-    insert into month_limits values ('${H}', date_trunc('month', now())::date - interval '1 month', 2000, 0.8),
-                                    ('${H}', date_trunc('month', now())::date, 2000, 0.8);
-    insert into category_plans select '${H}', m, id, default_type, case name when 'Ενοίκιο' then 800 when 'Ρεύμα' then 90 else 600 end
-      from categories, (select month m from month_limits) ms;
-    insert into payments (household_id, paid_on, category_id, payer_id, amount, description)
-      select '${H}', date_trunc('month', now())::date + 1, c.id, 1, 800, 'Ενοίκιο' from categories c where name = 'Ενοίκιο';
-    insert into payments (household_id, paid_on, category_id, payer_id, amount, description)
-      select '${H}', date_trunc('month', now())::date + 2, c.id, 2, 54.3, 'Lidl' from categories c where name = 'Σούπερ μάρκετ';
+    drop schema if exists public cascade; create schema public;
+    grant usage on schema public to anon, authenticated;
+    alter default privileges in schema public revoke execute on functions from public;
   `);
+  await db.exec(fs.readFileSync(`${root}supabase/schema.sql`, 'utf8'));
+  if (process.argv[2]) {
+    await db.exec(fs.readFileSync(process.argv[2], 'utf8'));
+  } else {
+    const H = '00000000-0000-4000-8000-000000000001';
+    await db.exec(`
+      insert into households (id, name) values ('${H}', 'Test');
+      insert into allowed_emails values ('a@example.com', '${H}'), ('b@example.com', '${H}');
+      insert into payers (household_id, name, sort_order) values ('${H}', 'Αθηνά', 0), ('${H}', 'Γιάννης', 1), ('${H}', 'Κοινό', 2);
+      insert into categories (household_id, name, default_type, sort_order) values
+        ('${H}', 'Ενοίκιο', 'fixed', 0), ('${H}', 'Σούπερ μάρκετ', 'extra', 1), ('${H}', 'Ρεύμα', 'fixed', 2);
+      insert into month_limits values ('${H}', date_trunc('month', now())::date - interval '1 month', 2000, 0.8),
+                                      ('${H}', date_trunc('month', now())::date, 2000, 0.8);
+      insert into category_plans select '${H}', m, id, default_type, case name when 'Ενοίκιο' then 800 when 'Ρεύμα' then 90 else 600 end
+        from categories, (select month m from month_limits) ms;
+      insert into payments (household_id, paid_on, category_id, payer_id, amount, description)
+        select '${H}', date_trunc('month', now())::date + 1, c.id, 1, 800, 'Ενοίκιο' from categories c where name = 'Ενοίκιο';
+      insert into payments (household_id, paid_on, category_id, payer_id, amount, description)
+        select '${H}', date_trunc('month', now())::date + 2, c.id, 2, 54.3, 'Lidl' from categories c where name = 'Σούπερ μάρκετ';
+    `);
+  }
 }
+await seed();
 
 // ------------------------------------------------------------------- auth
 
@@ -149,6 +159,9 @@ http.createServer(async (req, res) => {
   // Test helpers (not part of Supabase).
   if (url.pathname === '/__mail') return reply(200, mail.get(url.searchParams.get('email')) || {});
   if (url.pathname === '/__stats') return reply(200, { rpcCalls, refreshTokens: refreshTokens.size });
+  if (url.pathname === '/__reset' && req.method === 'POST') { await seed(); rpcCalls = 0; return reply(200, { ok: true }); }
+  // Stops the mock, so tests don't have to kill it.
+  if (url.pathname === '/__quit' && req.method === 'POST') { reply(200, { ok: true }); setTimeout(() => process.exit(0), 50); return; }
   if (url.pathname === '/__sql' && req.method === 'POST') {
     let sql = ''; for await (const c of req) sql += c;
     return reply(200, (await db.query(sql)).rows);

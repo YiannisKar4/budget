@@ -77,7 +77,7 @@ Good to know:
   To also show a sign-in code in the email (handy for an iPhone home-screen app), set up custom SMTP
   (for example Gmail with an app password) and add `{{ .Token }}` to the Magic Link template.
 - Category badges follow two rules (green fine, yellow careful, red over, grey not yet):
-  **Πάγια** are bills: Δεν πληρώθηκε ακόμα, Μένουν X €, Πληρώθηκε, Ακριβότερο.
+  **Πάγια** are bills: Δεν πληρώθηκε ακόμα, Πληρώθηκε (also when it came in cheaper), Ακριβότερο.
   **Επιπλέον** have a ceiling: Εντός πλάνου, Κοντά στο ταβάνι (from the warning level), Στο ταβάνι, Πάνω από το ταβάνι.
 
 ## Changing the database

@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=18';
-import * as supa from './supa.js?v=18';
-import { STORAGE_PREFIX } from './config.js?v=18';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=18';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=18';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=19';
+import * as supa from './supa.js?v=19';
+import { STORAGE_PREFIX } from './config.js?v=19';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=19';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=19';
 
 /* ------------------------------------------------------------------ state */
 
@@ -78,6 +78,12 @@ const STATUS_LABEL = {
   [STATUS.NOPLAN]: 'Χωρίς πλάνο',
 };
 ICON.partial = ICON.ok;
+const GICON = {
+  // a receipt: bills
+  fixed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+  // a basket: spending with a ceiling
+  extra: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18l-2 11H5z"/><path d="m8 9 4-6 4 6"/></svg>',
+};
 ICON.none = ICON.noplan;
 // The bar under each category has the colour of its badge.
 const BAR_CLASS = { ok: 'ok', paid: 'ok', near: 'near', atcap: 'near', over: 'over' };
@@ -409,13 +415,11 @@ function renderOverview() {
       [STATUS.NOPLAN]: 'Χωρίς πλάνο',
       [STATUS.NONE]: 'Τίποτα να πληρωθεί',
       [STATUS.PENDING]: `Οφείλονται ${euro(r.remaining)}`,
-      [STATUS.PARTIAL]: 'Πληρώθηκε μέρος',
-      [STATUS.PAID]: 'Ολοκληρώθηκε',
+      [STATUS.PAID]: r.under ? `−${euro(r.under)} από το πλάνο` : 'Ολοκληρώθηκε',
       [STATUS.ATCAP]: 'Απομένουν 0 €',
       [STATUS.OVER]: `+${euro(r.over)} ${fixedBill ? 'από το πλάνο' : 'από το ταβάνι'}`,
     }[r.status] || `Απομένουν ${euro(r.remaining)}`;
-    const label = r.status === STATUS.OVER ? (fixedBill ? 'Ακριβότερο' : 'Πάνω από το ταβάνι')
-      : r.status === STATUS.PARTIAL ? `Μένουν ${euro(r.remaining)}` : undefined;
+    const label = r.status === STATUS.OVER ? (fixedBill ? 'Ακριβότερο' : 'Πάνω από το ταβάνι') : undefined;
     return `
       <li class="cat-row" data-category="${esc(r.category)}" tabindex="0">
         <div class="name"><span>${esc(r.category)}</span></div>
@@ -423,6 +427,20 @@ function renderOverview() {
         <div class="bar"><i class="${cls}" style="width:${Math.min(100, ratio * 100)}%"></i></div>
         <div class="meta"><span>${meta}</span>${pill(r.status, label)}</div>
       </li>`;
+  };
+  // Πάγια and Επιπλέον each get their own card, with a sum in the header.
+  const group = (kind, title, sub, icon, rows) => {
+    const paid = rows.reduce((t, r) => t + r.paid, 0);
+    const plan = rows.reduce((t, r) => t + (r.plan || 0), 0);
+    return `
+      <section class="card cat-group ${kind}">
+        <div class="group-head">
+          <span class="group-icon">${icon}</span>
+          <div class="group-title"><h2>${title}</h2><span>${sub}</span></div>
+          <div class="group-sum num">${euro(Math.round(paid * 100) / 100)}<small>/ ${euro(Math.round(plan * 100) / 100)}</small></div>
+        </div>
+        <ul class="cat-list">${rows.map(row).join('')}</ul>
+      </section>`;
   };
   const fixed = s.rows.filter((r) => r.type === FIXED);
   const extra = s.rows.filter((r) => r.type === EXTRA);
@@ -456,11 +474,14 @@ function renderOverview() {
       </div>
     </div>
     ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
-    <div class="card" style="margin-top:12px">
-      <div class="card-head"><h2>Κατηγορίες: πληρωμένα / πλάνο</h2>${pill(s.totals.status)}</div>
-      ${fixed.length ? `<div class="section-label">Πάγια</div><ul class="cat-list">${fixed.map(row).join('')}</ul>` : ''}
-      ${extra.length ? `<div class="section-label">Επιπλέον</div><ul class="cat-list">${extra.map(row).join('')}</ul>` : ''}
-      <div class="totals-row"><span>Σύνολο</span><span class="num">${euro(s.totals.paid)} / ${euro(s.totals.plan)}</span></div>
+    <div class="cat-groups">
+      ${fixed.length ? group('fixed', 'Πάγια', 'Λογαριασμοί του μήνα', GICON.fixed, fixed) : ''}
+      ${extra.length ? group('extra', 'Επιπλέον', 'Έξοδα με ταβάνι για τον μήνα', GICON.extra, extra) : ''}
+    </div>
+    <div class="card totals-card">
+      <span>Σύνολο κατηγοριών</span>
+      <span class="num">${euro(s.totals.paid)} <small>/ ${euro(s.totals.plan)}</small></span>
+      ${pill(s.totals.status, s.totals.status === STATUS.OVER ? 'Πάνω από το πλάνο' : undefined)}
     </div>`;
 
   document.querySelectorAll('.cat-row').forEach((el) => {

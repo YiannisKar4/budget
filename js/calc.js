@@ -51,7 +51,7 @@ export function rowStatus(type, plan, paid, warn) {
     if (paid > plan + 0.005) return STATUS.OVER;
     if (plan === 0 && paid === 0) return STATUS.NONE;
     if (paid === 0) return STATUS.PENDING;
-    if (plan - paid >= 0.005) return STATUS.PARTIAL;
+    // Bills are paid in one go: a cheaper bill is paid, not "partly paid".
     return STATUS.PAID;
   }
   return capLikeStatus(plan, paid, warn);
@@ -94,12 +94,15 @@ export function monthSummary(data, month) {
     const withPlan = pr.filter((p) => p.plan !== null);
     const plan = withPlan.length ? round2(withPlan.reduce((s, p) => s + p.plan, 0)) : null;
     const paid = round2(paidBy.get(category) || 0);
+    // A bill that has been paid owes nothing more, even if it came in under its plan.
+    const billPaid = type === FIXED && paid > 0;
     return {
       category,
       type,
       plan,
       paid,
-      remaining: plan === null ? null : round2(Math.max(0, plan - paid)),
+      remaining: plan === null ? null : billPaid ? 0 : round2(Math.max(0, plan - paid)),
+      under: plan === null || !billPaid ? 0 : round2(Math.max(0, plan - paid)),
       over: plan === null ? null : round2(Math.max(0, paid - plan)),
       status: rowStatus(type, plan, paid, warn),
     };

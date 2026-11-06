@@ -1,5 +1,5 @@
 // Custom charts: turns a chart definition into series, then draws it with Chart.js.
-import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=19';
+import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=20';
 
 export const GROUPS = {
   category: 'Κατηγορία',
@@ -355,7 +355,8 @@ export function drawChart(canvas, cfg, built, data, onPick) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: false,
+    // Bars and slices grow in; off when the device asks for less motion.
+    animation: matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 450, easing: 'easeOutCubic' },
     interaction: { mode: cfg.kind === 'doughnut' ? 'nearest' : 'index', intersect: false, axis: horizontal ? 'y' : 'x' },
     plugins: {
       legend: {

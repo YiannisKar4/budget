@@ -112,9 +112,6 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-html { background: var(--page); }
-html:has(dialog[open]) { background: color-mix(in srgb, var(--page) 60%, #000); }
-@media (max-width: 560px) { html:has(dialog:not(.ask)[open]) { background: var(--surface-1); } }
 body {
   background: var(--page);
   color: var(--text-primary);
@@ -463,11 +460,9 @@ dialog {
   background: var(--surface-1); color: var(--text-primary); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   max-height: calc(100dvh - 24px);
 }
-dialog::backdrop { background: rgba(0, 0, 0, 0.4); bottom: -100vh; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 @media (max-width: 560px) {
   dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 18px 18px 0 0; max-height: 92dvh; }
-  dialog { transition: margin-bottom .28s cubic-bezier(.2,.8,.2,1), max-height .28s cubic-bezier(.2,.8,.2,1); }
-  dialog:not(.ask) { box-shadow: 0 150px 0 var(--surface-1), 0 300px 0 var(--surface-1), 0 450px 0 var(--surface-1), 0 20px 60px rgba(0,0,0,.3); }
 }
 .dlg { padding: 18px 16px 16px; }
 .dlg-head { display: flex; align-items: center; margin-bottom: 12px; }

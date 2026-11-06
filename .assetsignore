@@ -1,0 +1,14 @@
+# Files Cloudflare must not publish (only the site itself goes online).
+.git
+.claude
+.gitignore
+.assetsignore
+wrangler.jsonc
+node_modules
+dev
+supabase
+apps-script
+package.json
+package-lock.json
+README.md
+.wrangler

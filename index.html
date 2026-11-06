@@ -2,6 +2,38 @@
 <html lang="el">
 <head>
   <meta charset="utf-8">
+  <script>
+    // The app moved to its own address so it can be installed next to Family Schedule on Android
+    // (Chrome allows one installed app per domain). The old address forwards there and takes the
+    // chart setup and settings along; a sign-in link (#access_token=…) is passed on unchanged.
+    (function () {
+      var NEW = 'https://budget.karaglanisy.workers.dev/';
+      if (location.hostname !== 'yianniskar4.github.io') return;
+      var hash = location.hash;
+      if (!/access_token|error=/.test(hash)) {
+        var carry = {};
+        try { ['budget.charts', 'budget.settings'].forEach(function (k) { var v = localStorage.getItem(k); if (v) carry[k] = v; }); } catch (e) {}
+        hash = Object.keys(carry).length ? '#carry=' + encodeURIComponent(JSON.stringify(carry)) : '';
+      }
+      var go = function () { location.replace(NEW + hash); };
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.filter(function (r) { return r.scope.indexOf('/budget/') > -1; }).map(function (r) { return r.unregister(); }));
+        }).then(go, go);
+        setTimeout(go, 1500);
+      } else go();
+    })();
+    // On the new address: keep what the old one handed over, unless something is already saved here.
+    (function () {
+      var m = /^#carry=(.+)$/.exec(location.hash);
+      if (!m) return;
+      try {
+        var carry = JSON.parse(decodeURIComponent(m[1]));
+        Object.keys(carry).forEach(function (k) { if (/^budget\.(charts|settings)$/.test(k) && !localStorage.getItem(k)) localStorage.setItem(k, carry[k]); });
+      } catch (e) {}
+      history.replaceState(null, '', location.pathname + location.search);
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#f6f6f3">
@@ -9,7 +41,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest?v=28">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Budget">
@@ -26,9 +58,9 @@
       new MutationObserver(paint).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
     })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=28">
   <script src="js/vendor/chart-4.4.1.umd.js" defer></script>
-  <script type="module" src="js/app.js?v=27"></script>
+  <script type="module" src="js/app.js?v=28"></script>
 </head>
 <body>
   <header class="topbar">

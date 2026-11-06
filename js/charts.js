@@ -1,5 +1,5 @@
 // Custom charts: turns a chart definition into series, then draws it with Chart.js.
-import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=22';
+import { monthOf, addMonths, monthRange, FIXED, EXTRA } from './calc.js?v=23';
 
 export const GROUPS = {
   category: 'Κατηγορία',

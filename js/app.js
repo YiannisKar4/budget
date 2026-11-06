@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=20';
-import * as supa from './supa.js?v=20';
-import { STORAGE_PREFIX } from './config.js?v=20';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=20';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=20';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=21';
+import * as supa from './supa.js?v=21';
+import { STORAGE_PREFIX } from './config.js?v=21';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=21';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=21';
 
 /* ------------------------------------------------------------------ state */
 
@@ -796,6 +796,29 @@ function tilesHtml(tiles) {
     .join('')}</div>`;
 }
 
+/**
+ * Chart tooltips on phones: a tap shows one, but nothing ever hides it again (no mouse to move away).
+ * Hide them on a tap anywhere else, on scroll, and on their own a few seconds after a tap.
+ */
+function hideChartTips(except = null) {
+  for (const ch of state.chartInstances) {
+    if (ch.canvas === except || !ch.tooltip || !ch.tooltip.getActiveElements().length) continue;
+    ch.tooltip.setActiveElements([], { x: 0, y: 0 });
+    ch.setActiveElements([]);
+    ch.update('none');
+  }
+}
+let chartTipTimer;
+function watchChartTips() {
+  document.addEventListener('pointerdown', (e) => hideChartTips(e.target.closest ? e.target.closest('canvas') : null), { passive: true });
+  window.addEventListener('scroll', () => hideChartTips(), { passive: true });
+  document.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'mouse' || !(e.target instanceof HTMLCanvasElement)) return;
+    clearTimeout(chartTipTimer);
+    chartTipTimer = setTimeout(() => hideChartTips(), 2500);
+  }, { passive: true });
+}
+
 function destroyCharts() {
   state.chartInstances.forEach((c) => c.destroy());
   state.chartInstances = [];
@@ -1502,6 +1525,7 @@ function consumeSignInLink() {
 
 function init() {
   smoothDialogs();
+  watchChartTips();
   applyTheme();
   consumeSignInLink();
   if (!usesSupabase()) consumeConnectLink();

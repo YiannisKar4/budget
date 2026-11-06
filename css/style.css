@@ -493,3 +493,55 @@ dialog.ask { width: min(400px, calc(100vw - 32px)); border-radius: 18px; border:
 .ask-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 .ask-actions .btn { min-width: 96px; }
 .btn.primary.danger-fill { background: var(--critical); color: #fff; }
+
+/* ---------- smooth transitions ---------- */
+:root { --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); --ease-in: cubic-bezier(0.4, 0, 1, 1); }
+
+/* Buttons, rows and fields change colour softly and give a little press. */
+.btn, .icon-btn, .tab, .seg button, .cat-row, .entry, .cat-tile, .chips label, .field, .filters input, .filters select,
+.toast-x, .fab, .month-picker select, .drill-row td, .pill, .manage-row, .plan-row {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease,
+    opacity 0.2s ease, filter 0.2s ease, transform 0.15s var(--ease-out);
+}
+.btn:active:not(:disabled), .icon-btn:active, .tab:active, .seg button:active, .fab:active,
+.entry:active, .cat-tile:active, .chips label:active { transform: scale(0.96); }
+.cat-row:active { transform: scale(0.99); }
+.tab svg { transition: transform 0.25s var(--ease-out); }
+.tab[aria-selected="true"] svg { transform: translateY(-1px) scale(1.08); }
+@media (min-width: 820px) { .tab[aria-selected="true"] svg { transform: none; } }
+.bar > i, .ct-bar span { transition: width 0.4s var(--ease-out); }
+
+/* Page content glides in after a tab, month or drill-down change. */
+main.view-in { animation: view-in 0.32s var(--ease-out); }
+main.view-in .bar > i, main.view-in .ct-bar span { animation: bar-grow 0.7s var(--ease-out) both; }
+@keyframes view-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes bar-grow { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+/* Things that appear inside a page or window (QR box, errors, filter bar, login code). */
+.share-box, .err, .drill-bar, #code-form, .empty { animation: reveal 0.25s var(--ease-out); }
+@keyframes reveal { from { opacity: 0; transform: translateY(-4px); } }
+
+/* Windows: fade and rise in, fade out on close. On phones they slide up from the bottom. */
+dialog[open] { animation: dlg-in 0.26s var(--ease-out); }
+dialog[open]::backdrop { animation: fade-in 0.26s ease; }
+dialog.closing { animation: dlg-out 0.17s var(--ease-in) forwards; pointer-events: none; }
+dialog.closing::backdrop { animation: fade-out 0.17s ease forwards; }
+@keyframes dlg-in { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+@keyframes dlg-out { to { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@media (max-width: 560px) {
+  dialog:not(.ask)[open] { animation: sheet-in 0.32s var(--ease-out); }
+  dialog:not(.ask).closing { animation: sheet-out 0.17s var(--ease-in) forwards; }
+}
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+
+/* Theme change: colours cross-fade instead of flipping. */
+.theme-fade, .theme-fade * {
+  transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease, fill 0.4s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, *::backdrop { animation: none !important; transition: none !important; }
+}

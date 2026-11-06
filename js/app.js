@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=19';
-import * as supa from './supa.js?v=19';
-import { STORAGE_PREFIX } from './config.js?v=19';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=19';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=19';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=20';
+import * as supa from './supa.js?v=20';
+import { STORAGE_PREFIX } from './config.js?v=20';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=20';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=20';
 
 /* ------------------------------------------------------------------ state */
 
@@ -32,6 +32,71 @@ const state = {
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
+/* ------------------------------------------------------------------ motion */
+
+// Smooth transitions. Everything is skipped when the device asks for less motion.
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DIALOG_OUT_MS = 170;
+
+/**
+ * Dialogs fade/slide out before they close (they fade in with CSS).
+ * close() itself is wrapped, so every way of closing gets it: ✕, the backdrop, Esc and forms.
+ */
+function smoothDialogs() {
+  const proto = HTMLDialogElement.prototype;
+  const nativeClose = proto.close;
+  const nativeShowModal = proto.showModal;
+  const finish = (dlg) => {
+    clearTimeout(dlg._closeTimer);
+    dlg._closeTimer = null;
+    dlg.classList.remove('closing');
+    if (dlg.open) nativeClose.call(dlg, dlg._closeValue);
+  };
+  proto.close = function close(value) {
+    if (!this.open || reducedMotion()) { finish(this); return nativeClose.call(this, value); }
+    this._closeValue = value;
+    if (this._closeTimer) return; // already on its way out
+    this.classList.add('closing');
+    this._closeTimer = setTimeout(() => finish(this), DIALOG_OUT_MS);
+  };
+  proto.showModal = function showModal() {
+    if (this._closeTimer) finish(this); // reopened while still fading out
+    return nativeShowModal.call(this);
+  };
+  // Esc: animate instead of the instant native close.
+  document.addEventListener('cancel', (e) => {
+    if (e.target instanceof HTMLDialogElement && !reducedMotion()) { e.preventDefault(); e.target.close(); }
+  }, true);
+  // <form method="dialog"> that nobody stopped: close it ourselves, with the pressed button's value.
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (e.defaultPrevented || form.getAttribute('method') !== 'dialog' || reducedMotion()) return;
+    const dlg = form.closest('dialog');
+    if (!dlg) return;
+    e.preventDefault();
+    const b = e.submitter;
+    dlg.close(b && b.hasAttribute('value') ? b.value : undefined);
+  });
+}
+
+/** The page content glides in after a tab, month or drill-down change. */
+function enterView() {
+  const main = $('#main');
+  if (!main || reducedMotion()) return;
+  main.classList.remove('view-in');
+  void main.offsetWidth; // restart the animation
+  main.classList.add('view-in');
+}
+
+/** Colours cross-fade when the theme changes. */
+function fadeTheme() {
+  if (reducedMotion()) return;
+  const root = document.documentElement;
+  root.classList.add('theme-fade');
+  clearTimeout(fadeTheme.t);
+  fadeTheme.t = setTimeout(() => root.classList.remove('theme-fade'), 450);
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const MONTHS = ['Ιανουάριος', 'Φεβρουάριος', 'Μάρτιος', 'Απρίλιος', 'Μάιος', 'Ιούνιος', 'Ιούλιος', 'Αύγουστος', 'Σεπτέμβριος', 'Οκτώβριος', 'Νοέμβριος', 'Δεκέμβριος'];
 const monthLong = (m) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
@@ -161,6 +226,7 @@ async function fetchData({ quiet = false } = {}) {
   $('#main').classList.toggle('stale', !!state.data);
   try {
     const body = await call(state.settings, 'read');
+    const firstLoad = !state.data;
     state.data = {
       entries: body.entries,
       months: body.months,
@@ -174,7 +240,7 @@ async function fetchData({ quiet = false } = {}) {
     saveCache();
     if (!state.month) state.month = defaultMonth(state.data);
     // Don't redraw over plan changes that are not saved yet; the new data shows once they are saved or dropped.
-    if (!(state.plansDirty && state.plansDirty())) renderAll();
+    if (!(state.plansDirty && state.plansDirty())) { renderAll(); if (firstLoad) enterView(); }
   } catch (err) {
     if (handleAuthError(err)) return;
     if (!quiet || !state.data) toast(err.message, true);
@@ -251,6 +317,7 @@ async function setMonth(m) {
   // A chart's date range no longer applies: show the chosen month.
   if (state.entryFilter.scope === 'range') state.entryFilter = cleanFilter();
   renderAll();
+  enterView();
 }
 
 /* -------- setup -------- */
@@ -1419,6 +1486,7 @@ function go_(view) {
   if (location.hash !== `#${state.view}`) history.replaceState(null, '', `#${state.view}`);
   window.scrollTo(0, 0);
   renderAll();
+  enterView();
 }
 
 /* -------------------------------------------------------------------- init */
@@ -1433,6 +1501,7 @@ function consumeSignInLink() {
 }
 
 function init() {
+  smoothDialogs();
   applyTheme();
   consumeSignInLink();
   if (!usesSupabase()) consumeConnectLink();
@@ -1514,6 +1583,7 @@ function init() {
     if (!b) return;
     state.settings.theme = b.dataset.themeChoice;
     saveSettings(state.settings);
+    fadeTheme();
     applyTheme();
     renderAll();
   });

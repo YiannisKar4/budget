@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=21';
-import * as supa from './supa.js?v=21';
-import { STORAGE_PREFIX } from './config.js?v=21';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=21';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=21';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=22';
+import * as supa from './supa.js?v=22';
+import { STORAGE_PREFIX } from './config.js?v=22';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=22';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=22';
 
 /* ------------------------------------------------------------------ state */
 
@@ -1649,3 +1649,8 @@ function init() {
 }
 
 init();
+
+// Installable app: the service worker only keeps an offline copy of the site's own files.
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}

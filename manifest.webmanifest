@@ -3,7 +3,7 @@
   "short_name": "Budget",
   "description": "Οικογενειακά έξοδα",
   "lang": "el",
-  "id": "./",
+  "id": "/budget/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -143,14 +143,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand small { display: block; font-weight: 400; font-size: 12px; color: var(--text-muted); }
 .spacer { flex: 1; }
 .month-picker { display: flex; align-items: center; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
-.month-picker select {
-  -webkit-appearance: none; appearance: none; cursor: pointer;
-  border: 0; border-radius: 8px; background: transparent; color: var(--text-primary);
-  font-weight: 600; font-size: 15px; padding: 6px 4px; text-align: center; text-align-last: center;
-  min-width: 140px; max-width: 170px;
-}
-.month-picker select:hover { background: var(--surface-sunk); }
-.month-picker select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Native dropdown lists: follow the theme (otherwise white in dark mode). */
 select option, select optgroup { background-color: var(--surface-2); color: var(--text-primary); }
 select { color-scheme: inherit; }
@@ -284,29 +276,98 @@ h2 { font-size: 16px; margin: 0; }
   width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
   background: var(--surface-2); outline: none;
 }
-/* Dropdowns: our own chevron, set in from the right edge (the native arrow sits flush against it). */
-select.field, .filters select {
-  -webkit-appearance: none; appearance: none; cursor: pointer;
-  padding-right: 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px;
+/* ---------- our own dropdowns and calendar (js/pickers.js) ---------- */
+/* The real <select> / date field stays underneath, invisible; the button shows its value. */
+.pk { position: relative; display: block; min-width: 0; }
+.pk[hidden] { display: none; }
+.pk-native {
+  position: absolute !important; inset: 0; width: 100% !important; height: 100% !important;
+  opacity: 0; pointer-events: none; margin: 0; padding: 0; border: 0;
 }
-/* Date fields: a calendar icon in the same place as the dropdown chevron. The browser's own
-   picker button stays on top of it, invisible, so a tap there still opens the calendar. */
-input[type="date"].field {
-  /* appearance: none drops Android Chrome's own dropdown arrow, which otherwise sits next to our icon
-     and squeezes the date. */
-  -webkit-appearance: none; appearance: none; min-width: 0; text-align: left;
-  position: relative; padding-right: 40px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='2.5'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 12px center; background-size: 18px;
+.pk-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; text-align: left; cursor: pointer;
 }
-input[type="date"].field::-webkit-date-and-time-value { text-align: left; margin: 0; }
-input[type="date"].field::-webkit-datetime-edit { padding: 0; line-height: inherit; }
-input[type="date"].field::-webkit-datetime-edit-fields-wrapper { padding: 0; }
-input[type="date"].field::-webkit-calendar-picker-indicator {
-  position: absolute; top: 0; right: 0; width: 44px; height: 100%; margin: 0; padding: 0; opacity: 0; cursor: pointer;
+.pk-btn.field, .filters .pk-btn {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); outline: none;
 }
+.pk-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-btn.pk-empty .pk-text { color: var(--text-muted); }
+.pk-icon { flex: none; display: grid; place-items: center; color: var(--text-muted); transition: transform 0.2s var(--ease-out, ease), color 0.2s ease; }
+.pk-icon svg { width: 16px; height: 16px; }
+.pk-dp .pk-icon svg { width: 18px; height: 18px; }
+.pk-btn:hover .pk-icon, .pk-btn.pk-open .pk-icon { color: var(--accent); }
+.pk-dd .pk-btn.pk-open .pk-icon { transform: rotate(180deg); }
+.pk-btn.pk-open, .pk-btn.field:focus-visible, .filters .pk-btn:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pk-btn:disabled { opacity: 0.5; cursor: default; }
+/* Month in the top bar: bold, centred, inside the round pill. */
+.month-picker .pk-btn {
+  border: 0; border-radius: 999px; background: transparent; color: var(--text-primary);
+  font-weight: 600; font-size: 15px; padding: 6px 8px; justify-content: center; gap: 4px;
+  min-width: 140px; max-width: 180px;
+}
+.month-picker .pk-text { flex: none; }
+.month-picker .pk-icon svg { width: 14px; height: 14px; }
+.month-picker .pk-btn:hover, .month-picker .pk-btn.pk-open { background: var(--surface-sunk); }
+.month-picker .pk-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The open list / calendar: a card floating under the field. */
+.pk-pop {
+  position: fixed; z-index: 1000; margin: 0; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.16);
+  transform-origin: top center; animation: pk-in 0.16s var(--ease-out, ease);
+}
+.pk-pop.up { transform-origin: bottom center; }
+.pk-pop.closing { animation: pk-out 0.12s ease forwards; pointer-events: none; }
+@keyframes pk-in { from { opacity: 0; transform: translateY(-4px) scale(0.97); } }
+@keyframes pk-out { to { opacity: 0; transform: scale(0.98); } }
+.pk-menu { padding: 6px; }
+.pk-opt {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 9px 12px;
+  border: 0; border-radius: 10px; background: transparent; text-align: left; cursor: pointer; font-size: 15px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.pk-opt > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pk-opt svg { flex: none; width: 18px; height: 18px; opacity: 0; color: var(--accent); }
+.pk-opt:hover, .pk-opt:focus-visible { background: var(--surface-sunk); outline: none; }
+.pk-opt[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.pk-opt[aria-selected="true"] svg { opacity: 1; }
+.pk-opt:disabled { color: var(--text-muted); cursor: default; background: transparent; }
+
+.pk-cal { padding: 10px 10px 8px; overflow-x: hidden; }
+.pk-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.pk-cal-title { font-size: 15px; font-weight: 650; }
+.pk-nav {
+  width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-secondary); cursor: pointer; transition: background-color 0.15s ease;
+}
+.pk-nav svg { width: 20px; height: 20px; }
+.pk-nav:hover { background: var(--surface-sunk); color: var(--text-primary); }
+.pk-week, .pk-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.pk-week span { text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 4px 0; }
+.pk-day {
+  aspect-ratio: 1; min-height: 36px; max-height: 44px; width: 100%; border: 0; border-radius: 999px; background: transparent;
+  font-size: 14px; cursor: pointer; font-variant-numeric: tabular-nums;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+.pk-day:hover { background: var(--surface-sunk); }
+.pk-day:active { transform: scale(0.92); }
+.pk-day:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pk-day.out { color: var(--text-muted); opacity: 0.6; }
+.pk-day.today { color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pk-day[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; box-shadow: none; opacity: 1; }
+.pk-day:disabled { opacity: 0.3; cursor: default; background: transparent; }
+.pk-days.slide-l { animation: pk-slide-l 0.22s var(--ease-out, ease); }
+.pk-days.slide-r { animation: pk-slide-r 0.22s var(--ease-out, ease); }
+@keyframes pk-slide-l { from { opacity: 0; transform: translateX(24px); } }
+@keyframes pk-slide-r { from { opacity: 0; transform: translateX(-24px); } }
+.pk-cal-foot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--grid); }
+.pk-quick {
+  border: 1px solid var(--border); background: var(--surface-1); border-radius: 999px; padding: 6px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-secondary); transition: background-color 0.15s ease;
+}
+.pk-quick:hover { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .field:focus, .filters input:focus, .filters select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .day-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); font-weight: 600; margin: 16px 4px 6px; }
 .day-head:first-child { margin-top: 0; }
@@ -368,7 +429,7 @@ input[type="date"].field::-webkit-calendar-picker-indicator {
 .plan-row .field { padding: 8px 10px; }
 .plan-row.changed .name::after { content: " •"; color: var(--accent); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 480px) { .plan-row { grid-template-columns: minmax(0, 1fr) 122px 84px; gap: 6px; } .plan-row select.field { padding: 8px 28px 8px 8px; background-position: right 8px center; } }
+@media (max-width: 480px) { .plan-row { grid-template-columns: minmax(0, 1fr) 122px 84px; gap: 6px; } .plan-row .pk-btn.field { padding: 8px; gap: 4px; } }
 
 /* ---------- buttons ---------- */
 .btn {
@@ -468,7 +529,7 @@ dialog { overflow-y: auto; overscroll-behavior: contain; }
 @media (max-width: 360px) {
   main { padding: 12px; }
   .icon-btn { width: 32px; height: 32px; }
-  .month-picker select { min-width: 0; font-size: 14px; }
+  .month-picker .pk-btn { min-width: 0; font-size: 14px; }
   .tiles { gap: 8px; }
   .tile { padding: 12px; }
   .amount-input { font-size: 24px !important; }
@@ -522,7 +583,7 @@ dialog.ask { width: min(400px, calc(100vw - 32px)); border-radius: 18px; border:
 
 /* Buttons, rows and fields change colour softly and give a little press. */
 .btn, .icon-btn, .tab, .seg button, .cat-row, .entry, .cat-tile, .chips label, .field, .filters input, .filters select,
-.toast-x, .fab, .month-picker select, .drill-row td, .pill, .manage-row, .plan-row {
+.toast-x, .fab, .month-picker .pk-btn, .drill-row td, .pill, .manage-row, .plan-row {
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease,
     opacity 0.2s ease, filter 0.2s ease, transform 0.15s var(--ease-out);
 }

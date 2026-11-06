@@ -3,3 +3,4 @@ node_modules/
 grid*.json
 .DS_Store
 next/
+.wrangler/

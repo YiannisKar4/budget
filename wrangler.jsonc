@@ -1,0 +1,9 @@
+// Cloudflare Workers static site: serves the files in this folder as they are (no build step).
+{
+  "name": "budget",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "404-page"
+  }
+}

@@ -1,8 +1,8 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=22';
-import * as supa from './supa.js?v=22';
-import { STORAGE_PREFIX } from './config.js?v=22';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=22';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=22';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=23';
+import * as supa from './supa.js?v=23';
+import { STORAGE_PREFIX } from './config.js?v=23';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=23';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=23';
 
 /* ------------------------------------------------------------------ state */
 

@@ -41,7 +41,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="manifest" href="manifest.webmanifest?v=30">
+  <link rel="manifest" href="manifest.webmanifest?v=31">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Budget">
@@ -54,13 +54,33 @@
       var dark = matchMedia('(prefers-color-scheme: dark)');
       function paint() { meta.content = (root.dataset.theme || (dark.matches ? 'dark' : 'light')) === 'dark' ? '#0d0d0d' : '#f6f6f3'; }
       paint();
-      dark.addEventListener('change', paint);
+      if (dark.addEventListener) dark.addEventListener('change', paint); else dark.addListener(paint);
       new MutationObserver(paint).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
     })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=30">
+  <script>
+    // Safety net: if the app cannot start in this browser (too old, or a script error), say so
+    // on the page instead of leaving it blank. Kept in old-style JavaScript so it runs everywhere.
+    (function () {
+      var errors = [];
+      window.addEventListener('error', function (e) { errors.push(e.message || (e.target && e.target.src ? 'Δεν φορτώθηκε: ' + e.target.src : 'error')); }, true);
+      window.addEventListener('unhandledrejection', function (e) { errors.push(String(e.reason && e.reason.message || e.reason)); });
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          var main = document.getElementById('main');
+          if (!main || main.children.length) return;
+          var esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+          main.innerHTML = '<div class="setup card" id="boot-fail"><h1>Η σελίδα δεν μπόρεσε να ανοίξει</h1>' +
+            '<p class="muted">Πιθανότατα ο browser αυτής της συσκευής είναι παλιός. Ενημέρωσε το Chrome (ή το Safari μέσω ενημέρωσης iPadOS) και ξαναδοκίμασε, ή άνοιξε τη σελίδα με άλλον browser.</p>' +
+            '<div class="row-actions"><button class="btn primary" type="button" onclick="location.reload()">Ξαναδοκίμασε</button></div>' +
+            '<p class="note">Για βοήθεια, στείλε αυτές τις γραμμές:<br>' + esc(errors.slice(0, 3).join(' | ') || 'καμία ένδειξη σφάλματος') + '<br>' + esc(navigator.userAgent) + '</p></div>';
+        }, 2500);
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="css/style.css?v=31">
   <script src="js/vendor/chart-4.4.1.umd.js" defer></script>
-  <script type="module" src="js/app.js?v=30"></script>
+  <script type="module" src="js/app.js?v=31"></script>
 </head>
 <body>
   <header class="topbar">

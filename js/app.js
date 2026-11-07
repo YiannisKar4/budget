@@ -1,9 +1,10 @@
-import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=30';
-import * as supa from './supa.js?v=30';
-import { startPickers } from './pickers.js?v=30';
-import { STORAGE_PREFIX } from './config.js?v=30';
-import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=30';
-import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=30';
+import { call, loadSettings, saveSettings, ApiError, usesSupabase } from './api.js?v=31';
+import * as supa from './supa.js?v=31';
+import { startPickers } from './pickers.js?v=31';
+import dialogPolyfill from './vendor/dialog-polyfill-0.5.6.esm.js';
+import { STORAGE_PREFIX } from './config.js?v=31';
+import { monthSummary, defaultMonth, monthOf, addMonths, FIXED, EXTRA, STATUS, looseText } from './calc.js?v=31';
+import { buildSeries, buildTiles, drawChart, chartHeight, euro, GROUPS, SPLITS, KINDS, PERIODS, DEFAULT_CHARTS, monthShort, TIME_GROUPS } from './charts.js?v=31';
 
 /* ------------------------------------------------------------------ state */
 
@@ -15,6 +16,11 @@ const VIEWS = ['overview', 'entries', 'charts', 'plans'];
 function cleanFilter(extra = {}) {
   return { q: '', category: '', payer: '', scope: 'month', cats: null, from: '', to: '', source: '', ...extra };
 }
+
+// Plain copy of settings data (structuredClone is missing before Chrome 98 / Safari 15.4).
+const copyOf = (x) => JSON.parse(JSON.stringify(x));
+// Safari before 14 only knows the old addListener.
+const onMediaChange = (mq, fn) => (mq.addEventListener ? mq.addEventListener('change', fn) : mq.addListener(fn));
 
 const state = {
   settings: loadSettings(),
@@ -44,6 +50,11 @@ const DIALOG_OUT_MS = 170;
  * close() itself is wrapped, so every way of closing gets it: ✕, the backdrop, Esc and forms.
  */
 function smoothDialogs() {
+  if (!window.HTMLDialogElement) {
+    // Older browsers (Safari before 15.4) have no <dialog>: a helper script stands in for it.
+    document.querySelectorAll('dialog').forEach((d) => { d.classList.add('dlg-poly'); dialogPolyfill.registerDialog(d); });
+    return;
+  }
   const proto = HTMLDialogElement.prototype;
   const nativeClose = proto.close;
   const nativeShowModal = proto.showModal;
@@ -174,7 +185,7 @@ function loadCharts() {
     const c = JSON.parse(localStorage.getItem(CHARTS_KEY));
     if (Array.isArray(c) && c.length) return withoutDuplicates(c);
   } catch { /* use defaults */ }
-  return structuredClone(DEFAULT_CHARTS);
+  return copyOf(DEFAULT_CHARTS);
 }
 function saveCharts() {
   try { localStorage.setItem(CHARTS_KEY, JSON.stringify(state.charts)); } catch { /* ignore */ }
@@ -880,7 +891,7 @@ function renderCharts() {
   $('#chart-analysis').addEventListener('click', openAnalysis);
   $('#chart-reset').addEventListener('click', async () => {
     if (!(await ask({ title: 'Επαναφορά γραφημάτων;', text: 'Τα γραφήματα σε αυτή τη συσκευή γυρίζουν στα αρχικά. Οι αλλαγές σου σε αυτά χάνονται.', ok: 'Επαναφορά' }))) return;
-    state.charts = structuredClone(DEFAULT_CHARTS);
+    state.charts = copyOf(DEFAULT_CHARTS);
     saveCharts();
     renderAll();
   });
@@ -1631,7 +1642,7 @@ function init() {
     renderAll();
   });
 
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => state.view === 'charts' && renderAll());
+  onMediaChange(matchMedia('(prefers-color-scheme: dark)'), () => state.view === 'charts' && renderAll());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && configured() && Date.now() - state.lastFetch > 60_000) fetchData({ quiet: true });
   });

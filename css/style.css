@@ -130,6 +130,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- header ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 20;
+  background: var(--page); /* older browsers without color-mix */
   background: color-mix(in srgb, var(--page) 88%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -456,13 +457,20 @@ h2 { font-size: 16px; margin: 0; }
 
 /* ---------- dialog ---------- */
 dialog {
-  border: 0; padding: 0; border-radius: 18px; width: min(520px, calc(100vw - 24px));
+  margin: auto; border: 0; padding: 0; border-radius: 18px; width: min(520px, calc(100vw - 24px));
   background: var(--surface-1); color: var(--text-primary); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-height: calc(100vh - 24px); /* older browsers without dvh */
   max-height: calc(100dvh - 24px);
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+/* Browsers without <dialog> (Safari before 15.4) get a small helper script; these rules
+   give its dialogs the same place and backdrop the built-in ones have. */
+dialog:not([open]) { display: none; }
+dialog.dlg-poly { position: fixed; top: 0; right: 0; bottom: 0; left: 0; height: -webkit-fit-content; height: fit-content; }
+dialog.dlg-poly + .backdrop { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0, 0, 0, 0.4); }
+._dialog_overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
 @media (max-width: 560px) {
-  dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 18px 18px 0 0; max-height: 92dvh; }
+  dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 18px 18px 0 0; max-height: 92vh; max-height: 92dvh; }
 }
 .dlg { padding: 18px 16px 16px; }
 .dlg-head { display: flex; align-items: center; margin-bottom: 12px; }
